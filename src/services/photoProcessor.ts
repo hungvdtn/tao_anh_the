@@ -1,24 +1,36 @@
-import { FaceLandmarker, FilesetResolver, ImageSegmenter } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { removeBackground, Config } from "@imgly/background-removal";
 import { PhotoType, cmToPx } from "../constants";
 
 export class PhotoProcessor {
   private faceLandmarker: any = null;
-  private imageSegmenter: any = null;
+  private isInitializing = false;
+  private initializationPromise: Promise<void> | null = null;
 
+  /**
+   * Initialize models using a singleton pattern to prevent multiple loads and save memory.
+   */
   async init() {
-    if (this.faceLandmarker && this.imageSegmenter) return;
+    if (this.faceLandmarker) return;
+    if (this.isInitializing) return this.initializationPromise!;
 
-    try {
-      const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.33/wasm"
-      );
+    this.isInitializing = true;
+    this.initializationPromise = (async () => {
+      try {
+        console.log("[PhotoProcessor] Bắt đầu tải mô hình...");
+        
+        console.log("[PhotoProcessor] Đang tải MediaPipe FilesetResolver...");
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.33/wasm"
+        );
 
-      // Check for WebGL support to decide delegate
-      const canvas = document.createElement('canvas');
-      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-      const delegate = gl ? "GPU" : "CPU";
+        console.log("[PhotoProcessor] Đang khởi tạo FaceLandmarker...");
+        // Check for WebGL support to decide delegate
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        const delegate = gl ? "GPU" : "CPU";
+        console.log(`[PhotoProcessor] Sử dụng delegate: ${delegate}`);
 
-      if (!this.faceLandmarker) {
         this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
@@ -27,123 +39,135 @@ export class PhotoProcessor {
           runningMode: "IMAGE",
           numFaces: 1,
         });
-      }
 
-      if (!this.imageSegmenter) {
-        this.imageSegmenter = await ImageSegmenter.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite",
-            delegate: delegate,
-          },
-          runningMode: "IMAGE",
-          outputCategoryMask: true,
-          outputConfidenceMasks: false,
-        });
+        console.log("[PhotoProcessor] Tải mô hình thành công.");
+      } catch (error) {
+        console.error("[PhotoProcessor] Lỗi khi tải mô hình:", error);
+        this.isInitializing = false;
+        this.initializationPromise = null;
+        throw new Error("Không thể tải mô hình xử lý ảnh. Vui lòng kiểm tra kết nối mạng hoặc thử lại.");
+      } finally {
+        this.isInitializing = false;
       }
-    } catch (error) {
-      console.error("Failed to initialize photo processor:", error);
-      throw error;
-    }
+    })();
+
+    return this.initializationPromise;
   }
 
   async process(imageFile: File, type: PhotoType): Promise<string> {
-    await this.init();
+    try {
+      console.log("[PhotoProcessor] Bắt đầu xử lý ảnh:", imageFile.name);
+      
+      // 1. Initialize models
+      await this.init();
 
-    // 1. Load image
-    const image = await this.loadImage(imageFile);
+      // 2. Load image
+      console.log("[PhotoProcessor] Đang tải ảnh vào bộ nhớ...");
+      const image = await this.loadImage(imageFile);
+      console.log(`[PhotoProcessor] Kích thước ảnh gốc: ${image.width}x${image.height}`);
 
-    // 2. Remove background using MediaPipe ImageSegmenter
-    const segmentationResult = this.imageSegmenter.segment(image);
-    const categoryMask = segmentationResult.categoryMask;
-    const maskData = categoryMask.getAsUint8Array();
-    
-    const maskCanvas = document.createElement('canvas');
-    maskCanvas.width = image.width;
-    maskCanvas.height = image.height;
-    const maskCtx = maskCanvas.getContext('2d')!;
-    const maskImageData = maskCtx.createImageData(image.width, image.height);
+      // 3. Remove background using @imgly/background-removal
+      console.log("[PhotoProcessor] Đang thực hiện tách nền (Background Removal)...");
+      const config: Config = {
+        progress: (key, current, total) => {
+          console.log(`[PhotoProcessor] Tiến trình tách nền [${key}]: ${Math.round((current / total) * 100)}%`);
+        },
+        output: {
+          format: 'image/png',
+          quality: 0.8
+        }
+      };
+      
+      let noBgBlob: Blob;
+      try {
+        noBgBlob = await removeBackground(imageFile, config);
+        console.log("[PhotoProcessor] Tách nền thành công.");
+      } catch (bgError) {
+        console.error("[PhotoProcessor] Lỗi khi tách nền:", bgError);
+        throw new Error("Lỗi tách nền: Có thể do ảnh quá lớn hoặc trình duyệt hết bộ nhớ.");
+      }
 
-    for (let i = 0; i < maskData.length; i++) {
-      const isPerson = maskData[i] > 0;
-      const idx = i * 4;
-      maskImageData.data[idx] = 0;
-      maskImageData.data[idx + 1] = 0;
-      maskImageData.data[idx + 2] = 0;
-      maskImageData.data[idx + 3] = isPerson ? 255 : 0;
+      const noBgImage = await this.loadImage(URL.createObjectURL(noBgBlob));
+
+      // 4. Detect face for alignment
+      console.log("[PhotoProcessor] Đang nhận diện khuôn mặt và căn chỉnh...");
+      const results = this.faceLandmarker!.detect(image);
+      
+      if (!results.faceLandmarks || results.faceLandmarks.length === 0) {
+        console.error("[PhotoProcessor] Không tìm thấy khuôn mặt.");
+        throw new Error("Không tìm thấy khuôn mặt trong ảnh. Vui lòng chọn ảnh rõ mặt hơn.");
+      }
+
+      const landmarks = results.faceLandmarks[0];
+      
+      // Landmarks: 10 (top of forehead/hairline), 152 (bottom of chin)
+      const topHead = landmarks[10];
+      const bottomChin = landmarks[152];
+      
+      const faceHeightInImage = Math.abs(bottomChin.y - topHead.y) * image.height;
+      const faceCenterX = landmarks[1].x * image.width;
+
+      // 5. Calculate crop and draw to final canvas
+      console.log("[PhotoProcessor] Đang vẽ lên Canvas cuối cùng...");
+      const targetWidth = cmToPx(type.widthCm);
+      const targetHeight = cmToPx(type.heightCm);
+      
+      const scale = (targetHeight * type.faceRatio) / faceHeightInImage;
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext('2d', { alpha: false })!; // Optimization: disable alpha for final canvas
+
+      // Fill background
+      ctx.fillStyle = type.bgColor;
+      ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+      const headroom = targetHeight * 0.18; 
+      const drawWidth = image.width * scale;
+      const drawHeight = image.height * scale;
+      const dx = targetWidth / 2 - faceCenterX * scale;
+      const dy = headroom - topHead.y * image.height * scale;
+
+      // Apply Enhancement
+      ctx.filter = 'brightness(1.05) contrast(1.02) saturate(1.02)';
+      ctx.drawImage(noBgImage, dx, dy, drawWidth, drawHeight);
+      ctx.filter = 'none';
+
+      // 6. Convert Canvas to Blob URL
+      console.log("[PhotoProcessor] Đang chuyển đổi Canvas thành kết quả cuối cùng...");
+      
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.95);
+      });
+
+      if (!blob) {
+        throw new Error("Không thể tạo tệp hình ảnh từ Canvas.");
+      }
+
+      const resultUrl = URL.createObjectURL(blob);
+      
+      // Memory Cleanup: Revoke object URLs
+      if (noBgImage.src.startsWith('blob:')) {
+        URL.revokeObjectURL(noBgImage.src);
+      }
+      
+      console.log("[PhotoProcessor] Xử lý hoàn tất thành công.");
+      return resultUrl;
+    } catch (error: any) {
+      console.error("[PhotoProcessor] Lỗi trong quá trình xử lý:", error);
+      throw error;
     }
-    maskCtx.putImageData(maskImageData, 0, 0);
-
-    const noBgCanvas = document.createElement('canvas');
-    noBgCanvas.width = image.width;
-    noBgCanvas.height = image.height;
-    const noBgCtx = noBgCanvas.getContext('2d')!;
-    noBgCtx.drawImage(maskCanvas, 0, 0);
-    noBgCtx.globalCompositeOperation = 'source-in';
-    noBgCtx.drawImage(image, 0, 0);
-
-    // 3. Detect face
-    const results = this.faceLandmarker!.detect(image);
-    if (!results.faceLandmarks || results.faceLandmarks.length === 0) {
-      throw new Error("Không tìm thấy khuôn mặt trong ảnh. Vui lòng chọn ảnh rõ mặt hơn.");
-    }
-
-    const landmarks = results.faceLandmarks[0];
-    
-    // Calculate face bounding box from landmarks
-    // Landmarks: 10 (top of forehead/hairline), 152 (bottom of chin)
-    const topHead = landmarks[10];
-    const bottomChin = landmarks[152];
-    
-    // We use the distance from top of head to chin as the face height
-    const faceHeightInImage = Math.abs(bottomChin.y - topHead.y) * image.height;
-    const faceCenterX = landmarks[1].x * image.width; // Tip of nose
-
-    // 4. Calculate crop
-    const targetWidth = cmToPx(type.widthCm);
-    const targetHeight = cmToPx(type.heightCm);
-    
-    // The face height should occupy type.faceRatio of targetHeight
-    const scale = (targetHeight * type.faceRatio) / faceHeightInImage;
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-    const ctx = canvas.getContext('2d')!;
-
-    // Fill background
-    ctx.fillStyle = type.bgColor;
-    ctx.fillRect(0, 0, targetWidth, targetHeight);
-
-    // Calculate drawing position
-    // Headroom: space from top of canvas to top of head (hairline)
-    // Usually 15-20% of target height to allow for the crown/hair
-    const headroom = targetHeight * 0.18; 
-    
-    const drawWidth = image.width * scale;
-    const drawHeight = image.height * scale;
-    
-    // dx: center face horizontally
-    const dx = targetWidth / 2 - faceCenterX * scale;
-    // dy: position top of head (hairline) at 'headroom' from top
-    const dy = headroom - topHead.y * image.height * scale;
-
-    // Apply Enhancement (Smoothing & Brightening)
-    // Brightness: 1.08 (8% boost), Contrast: 1.05 (5% boost), Saturate: 1.05
-    ctx.filter = 'brightness(1.08) contrast(1.05) saturate(1.05) blur(0.2px)';
-    
-    ctx.drawImage(noBgCanvas, dx, dy, drawWidth, drawHeight);
-
-    // Reset filter for any future operations on this context
-    ctx.filter = 'none';
-
-    return canvas.toDataURL('image/jpeg', 0.95);
   }
 
   private loadImage(src: string | File): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => resolve(img);
-      img.onerror = reject;
+      img.onerror = (e) => {
+        console.error("[PhotoProcessor] Lỗi khi tải ảnh:", e);
+        reject(new Error("Không thể tải hình ảnh vào bộ nhớ."));
+      };
       if (src instanceof File) {
         img.src = URL.createObjectURL(src);
       } else {

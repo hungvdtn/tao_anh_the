@@ -27,6 +27,24 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Cleanup preview URL to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  // Cleanup result URL to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (resultUrl && resultUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(resultUrl);
+      }
+    };
+  }, [resultUrl]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -55,29 +73,36 @@ export default function App() {
   const processPhoto = async () => {
     if (!selectedFile) return;
 
+    console.log("[App] Bắt đầu tiến trình xử lý ảnh...");
     setIsProcessing(true);
     setError(null);
-    setProgress(10);
+    setResultUrl(null);
+    setProgress(5);
 
     try {
-      // Simulate progress since libraries don't always give granular updates
-      const progressInterval = setInterval(() => {
-        setProgress(prev => Math.min(prev + 5, 90));
-      }, 1000);
-
+      // Simulate initial progress
+      setProgress(10);
+      
       const result = await photoProcessor.process(selectedFile, selectedType);
       
-      clearInterval(progressInterval);
+      console.log("[App] Xử lý ảnh hoàn tất, cập nhật giao diện.");
       setProgress(100);
       setResultUrl(result);
+      
       confetti({
         particleCount: 100,
         spread: 70,
         origin: { y: 0.6 }
       });
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Có lỗi xảy ra trong quá trình xử lý.');
+      console.error("[App] Lỗi trong quá trình xử lý:", err);
+      const errorMessage = err.message || 'Có lỗi xảy ra trong quá trình xử lý.';
+      setError(errorMessage);
+      
+      // If it's a memory issue, we might want to suggest a specific message
+      if (errorMessage.toLowerCase().includes('memory') || errorMessage.toLowerCase().includes('tài nguyên')) {
+        setError("Lỗi xử lý ảnh: Quá tải tài nguyên trình duyệt. Vui lòng thử lại với ảnh nhỏ hơn hoặc khởi động lại trình duyệt.");
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -256,7 +281,28 @@ export default function App() {
               
               <div className="flex-1 flex items-center justify-center p-8 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px]">
                 <AnimatePresence mode="wait">
-                  {resultUrl ? (
+                  {error ? (
+                    <motion.div 
+                      key="error"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="text-center space-y-4 max-w-sm p-6 bg-red-50 rounded-3xl border border-red-100"
+                    >
+                      <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600">
+                        <AlertCircle className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-red-800">Lỗi xử lý ảnh</p>
+                        <p className="text-sm text-red-600 mt-1">{error}</p>
+                      </div>
+                      <button 
+                        onClick={processPhoto}
+                        className="px-6 py-2 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-all text-sm"
+                      >
+                        Thử lại
+                      </button>
+                    </motion.div>
+                  ) : resultUrl ? (
                     <motion.div 
                       key="result"
                       initial={{ opacity: 0, scale: 0.9 }}
