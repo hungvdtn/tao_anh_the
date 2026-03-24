@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Google AI Studio App</title>
+    <script>
+      // Mitigation for "Cannot set property fetch of #<Window> which has only a getter"
+      // This must run before any module scripts are evaluated.
+      (function() {
+        try {
+          var currentFetch = window.fetch;
+          if (!currentFetch) return;
+
+          function defineOn(target, name) {
+            if (!target) return;
+            try {
+              var desc = Object.getOwnPropertyDescriptor(target, 'fetch');
+              if (desc && !desc.configurable) {
+                console.log('Property "fetch" on ' + name + ' is not configurable');
+                return;
+              }
+
+              // Try to delete it first to ensure we can redefine it
+              try { delete target.fetch; } catch (e) {}
+
+              Object.defineProperty(target, 'fetch', {
+                get: function() { return currentFetch; },
+                set: function(v) { 
+                  if (v !== currentFetch) {
+                    currentFetch = v;
+                  }
+                },
+                configurable: true,
+                enumerable: true
+              });
+            } catch (e) {
+              try { target.fetch = currentFetch; } catch (err) {}
+            }
+          }
+
+          defineOn(window, 'window');
+          defineOn(globalThis, 'globalThis');
+          defineOn(self, 'self');
+          if (typeof Window !== 'undefined' && Window.prototype) {
+            defineOn(Window.prototype, 'Window.prototype');
+          }
+        } catch (e) {
+          console.warn('Failed to fix fetch property:', e);
+        }
+      })();
+
+      // Suppress info logs globally to avoid confusing the user with MediaPipe/TFLite info messages
+      (function() {
+        var tfliteRegex = /TensorFlow Lite|XNNPACK|delegate|wasm|FilesetResolver/i;
+        var originalConsole = window.console;
+        
+        if (typeof Proxy !== 'undefined') {
+          window.console = new Proxy(originalConsole, {
+            get: function(target, prop) {
+              var original = target[prop];
+              if (typeof original === 'function') {
+                return function() {
+                  var args = Array.prototype.slice.call(arguments);
+                  var s = "";
+                  try {
+                    for (var i = 0; i < args.length; i++) {
+                      var arg = args[i];
+                      if (!arg) continue;
+                      if (typeof arg === 'string') {
+                        s += arg + " ";
+                      } else {
+                        try { s += JSON.stringify(arg) + " "; } catch (e) { s += String(arg) + " "; }
+                      }
+                    }
+                  } catch (e) {
+                    s = String(args);
+                  }
+                  
+                  if (tfliteRegex.test(s)) {
+                    return;
+                  }
+                  return original.apply(target, arguments);
+                };
+              }
+              return original;
+            }
+          });
+        } else {
+          // Fallback for older browsers
+          var methods = ['log', 'info', 'warn', 'error', 'debug', 'trace', 'dir', 'group', 'groupCollapsed', 'table'];
+          methods.forEach(function(method) {
+            var original = console[method];
+            if (!original) return;
+            console[method] = function() {
+              var args = Array.prototype.slice.call(arguments);
+              var s = "";
+              try {
+                s = args.map(function(arg) {
+                  if (typeof arg === 'string') return arg;
+                  try { return JSON.stringify(arg); } catch (e) { return String(arg); }
+                }).join(" ");
+              } catch (e) {
+                s = String(args);
+              }
+              if (tfliteRegex.test(s)) return;
+              original.apply(console, arguments);
+            };
+          });
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
