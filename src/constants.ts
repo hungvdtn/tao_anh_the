@@ -3,7 +3,14 @@ export interface PhotoType {
   name: string;
   widthCm: number;
   heightCm: number;
-  faceRatio: number; // Face height / Image height (e.g., 0.75 for 75%)
+  faceRatio?: number; // Face height / Image height
+  eyeRatio?: number; // (Eye to top) / (Eye to bottom)
+  headWidthRatio?: number; // Head width / Image width
+  eyePosRatio?: number; // (Eye to top) / Image height
+  eyePosRange?: [number, number]; // Min/Max (Eye to top) / Image height
+  headHeightMm?: number; // Head height in mm
+  topToHeadMm?: number; // Distance from top of image to top of head in mm
+  dpi: number;
   bgColor: string;
   description: string;
 }
@@ -14,33 +21,38 @@ export const PHOTO_TYPES: PhotoType[] = [
     name: 'Hộ chiếu 4x6',
     widthCm: 4,
     heightCm: 6,
-    faceRatio: 0.55,
+    headWidthRatio: 0.55, // Larger face
+    eyePosRatio: 0.4, // > 1/3, adjusted for tie visibility
+    dpi: 300,
     bgColor: '#ffffff',
-    description: 'Nền trắng, mặt chiếm ~55%',
+    description: 'Quy chuẩn theo Thủ tục Cấp hộ chiếu phổ thông trên Cổng DVC Bộ Công an',
   },
   {
-    id: 'id-3x4-blue',
-    name: 'Bằng lái/Thẻ SV 3x4',
+    id: 'license-3x4',
+    name: 'Giấy phép lái xe 3x4',
     widthCm: 3,
     heightCm: 4,
-    faceRatio: 0.50,
-    bgColor: '#005bb5',
-    description: 'Nền xanh dương, mặt chiếm ~50%',
+    headWidthRatio: 0.38, // Close to 1/3 but slightly larger for better framing
+    eyePosRatio: 0.33, // Exactly 1/3
+    dpi: 500,
+    bgColor: '#3a98e3',
+    description: 'Quy chuẩn theo Thủ tục Cấp đổi GPLX trực tuyến mức độ 4 trên Cổng DVC Cảnh sát giao thông Bộ Công an',
   },
   {
-    id: 'id-3x4-white',
-    name: 'Sơ yếu lý lịch 3x4',
+    id: 'student-3x4',
+    name: 'Thẻ HSSV/Thẻ khác/Sơ yếu Lý lịch',
     widthCm: 3,
     heightCm: 4,
-    faceRatio: 0.50,
-    bgColor: '#ffffff',
-    description: 'Nền trắng, mặt chiếm ~50%',
+    headWidthRatio: 1 / 2,
+    eyePosRatio: 0.38, // > 1/3
+    dpi: 400,
+    bgColor: '#3a98e3',
+    description: 'Theo quy chuẩn chung; nền trắng hoặc nền xanh',
   },
 ];
 
-export const DPI = 300;
 export const CM_TO_INCH = 1 / 2.54;
 
-export function cmToPx(cm: number): number {
-  return Math.round(cm * CM_TO_INCH * DPI);
+export function cmToPx(cm: number, dpi: number = 300): number {
+  return Math.round(cm * CM_TO_INCH * dpi);
 }

@@ -54,22 +54,26 @@ export class PhotoProcessor {
     return this.initializationPromise;
   }
 
-  async process(imageFile: File, type: PhotoType): Promise<string> {
+  async process(imageFile: File, type: PhotoType, onProgress?: (p: number) => void): Promise<string> {
     try {
       console.log("[PhotoProcessor] Bắt đầu xử lý ảnh:", imageFile.name);
+      if (onProgress) onProgress(5);
       
       // 1. Initialize models
       await this.init();
+      if (onProgress) onProgress(10);
 
       // 2. Load image
       console.log("[PhotoProcessor] Đang tải ảnh vào bộ nhớ...");
       const image = await this.loadImage(imageFile);
-      console.log(`[PhotoProcessor] Kích thước ảnh gốc: ${image.width}x${image.height}`);
+      if (onProgress) onProgress(15);
 
       // 3. Remove background using @imgly/background-removal
       console.log("[PhotoProcessor] Đang thực hiện tách nền (Background Removal)...");
       const config: Config = {
         progress: (key, current, total) => {
+          const percent = Math.round((current / total) * 60); // Use 60% of total progress for this step
+          if (onProgress) onProgress(15 + percent);
           console.log(`[PhotoProcessor] Tiến trình tách nền [${key}]: ${Math.round((current / total) * 100)}%`);
         },
         output: {
@@ -88,10 +92,12 @@ export class PhotoProcessor {
       }
 
       const noBgImage = await this.loadImage(URL.createObjectURL(noBgBlob));
+      if (onProgress) onProgress(80);
 
       // 4. Detect face for alignment
       console.log("[PhotoProcessor] Đang nhận diện khuôn mặt và căn chỉnh...");
       const results = this.faceLandmarker!.detect(image);
+      if (onProgress) onProgress(85);
       
       if (!results.faceLandmarks || results.faceLandmarks.length === 0) {
         console.error("[PhotoProcessor] Không tìm thấy khuôn mặt.");
@@ -99,38 +105,82 @@ export class PhotoProcessor {
       }
 
       const landmarks = results.faceLandmarks[0];
+      if (onProgress) onProgress(90);
       
       // Landmarks: 10 (top of forehead/hairline), 152 (bottom of chin)
       const topHead = landmarks[10];
       const bottomChin = landmarks[152];
-      
       const faceHeightInImage = Math.abs(bottomChin.y - topHead.y) * image.height;
-      const faceCenterX = landmarks[1].x * image.width;
+      
+      // Eye position (using iris centers for precision)
+      // Left iris: 468, Right iris: 473
+      const leftEye = landmarks[468] || landmarks[159];
+      const rightEye = landmarks[473] || landmarks[386];
+      const eyeYInImage = ((leftEye.y + rightEye.y) / 2) * image.height;
+      const eyeXInImage = ((leftEye.x + rightEye.x) / 2) * image.width;
+
+      // Head width (approximate using landmarks 234 and 454)
+      const headWidthInImage = Math.abs(landmarks[454].x - landmarks[234].x) * image.width;
 
       // 5. Calculate crop and draw to final canvas
       console.log("[PhotoProcessor] Đang vẽ lên Canvas cuối cùng...");
-      const targetWidth = cmToPx(type.widthCm);
-      const targetHeight = cmToPx(type.heightCm);
+      const targetWidth = cmToPx(type.widthCm, type.dpi);
+      const targetHeight = cmToPx(type.heightCm, type.dpi);
       
-      const scale = (targetHeight * type.faceRatio) / faceHeightInImage;
+      let scale = 1;
+      let dy = 0;
+
+      if (type.id === 'passport-4x6' && type.faceRatio) {
+        // Passport: scale by face height ratio
+        scale = (targetHeight * (type.faceRatio || 0.7)) / faceHeightInImage;
+        // Eye position: (eyeY - top) / (bottom - eyeY) = eyeRatio
+        const eyeRatio = type.eyeRatio || (2 / 3);
+        const targetEyeY = targetHeight * (eyeRatio / (1 + eyeRatio));
+        dy = targetEyeY - eyeYInImage * scale;
+      } else {
+        // License/Student: scale by head width ratio
+        scale = (targetWidth * (type.headWidthRatio || 1 / 3)) / headWidthInImage;
+        
+        let targetEyeYRatio = 1 / 3;
+        if (type.eyePosRange) {
+          targetEyeYRatio = (type.eyePosRange[0] + type.eyePosRange[1]) / 2;
+        } else if (type.eyePosRatio) {
+          targetEyeYRatio = type.eyePosRatio;
+        }
+        
+        const targetEyeY = targetHeight * targetEyeYRatio;
+        dy = targetEyeY - eyeYInImage * scale;
+
+        // Ensure the image covers the bottom of the canvas
+        // If the bottom of the image doesn't reach the bottom of the canvas, we must increase the scale
+        if (dy + image.height * scale < targetHeight) {
+          const minScaleToFillBottom = (targetHeight - targetEyeY) / (image.height - eyeYInImage);
+          scale = minScaleToFillBottom;
+          // Recalculate dy with the new scale
+          dy = targetEyeY - eyeYInImage * scale;
+        }
+      }
       
       const canvas = document.createElement('canvas');
       canvas.width = targetWidth;
       canvas.height = targetHeight;
-      const ctx = canvas.getContext('2d', { alpha: false })!; // Optimization: disable alpha for final canvas
+      const ctx = canvas.getContext('2d', { alpha: false })!;
 
       // Fill background
       ctx.fillStyle = type.bgColor;
       ctx.fillRect(0, 0, targetWidth, targetHeight);
 
-      const headroom = targetHeight * 0.18; 
       const drawWidth = image.width * scale;
       const drawHeight = image.height * scale;
-      const dx = targetWidth / 2 - faceCenterX * scale;
-      const dy = headroom - topHead.y * image.height * scale;
+      
+      // Improved horizontal centering: center the midpoint between the eyes
+      const dx = targetWidth / 2 - eyeXInImage * scale;
 
       // Apply Enhancement
-      ctx.filter = 'brightness(1.05) contrast(1.02) saturate(1.02)';
+      ctx.imageSmoothingQuality = 'high';
+      // Reverting to a cleaner filter without blur or drop-shadows to restore sharpness.
+      // We will observe the raw background removal result to identify specific fringe areas.
+      ctx.filter = 'contrast(1.02) saturate(1.02)';
       ctx.drawImage(noBgImage, dx, dy, drawWidth, drawHeight);
       ctx.filter = 'none';
 
@@ -146,6 +196,7 @@ export class PhotoProcessor {
       }
 
       const resultUrl = URL.createObjectURL(blob);
+      if (onProgress) onProgress(100);
       
       // Memory Cleanup: Revoke object URLs
       if (noBgImage.src.startsWith('blob:')) {

@@ -9,7 +9,15 @@ import {
   Image as ImageIcon,
   Camera,
   ChevronDown,
-  Loader2
+  Loader2,
+  ArrowRight,
+  Info,
+  Check,
+  User,
+  Settings,
+  FileImage,
+  Zap,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PHOTO_TYPES, PhotoType } from './constants';
@@ -21,37 +29,69 @@ export default function App() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<PhotoType>(PHOTO_TYPES[0]);
+  const [customBgColor, setCustomBgColor] = useState('#3a98e3');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [showGuide, setShowGuide] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Cleanup preview URL to prevent memory leaks
-  useEffect(() => {
-    return () => {
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [previewUrl]);
+  const validateResolution = (file: File, typeId: string): Promise<{ valid: boolean; message?: string }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.width;
+        const h = img.height;
+        
+        let minW = 0;
+        let minH = 0;
+        let dpi = 0;
 
-  // Cleanup result URL to prevent memory leaks
-  useEffect(() => {
-    return () => {
-      if (resultUrl && resultUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(resultUrl);
-      }
-    };
-  }, [resultUrl]);
+        if (typeId === 'passport-4x6') {
+          minW = 354;
+          minH = 471;
+          dpi = 300;
+        } else if (typeId === 'license-3x4') {
+          minW = 473;
+          minH = 630;
+          dpi = 400;
+        } else if (typeId === 'student-3x4') {
+          minW = 354;
+          minH = 471;
+          dpi = 300;
+        }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (w < minW || h < minH) {
+          resolve({
+            valid: false,
+            message: `Độ phân giải ảnh quá thấp. Vui lòng tải lên ảnh có độ phân giải tối thiểu ${dpi}dpi trở lên, tương ứng với kích thước ảnh ${minW} x ${minH} pixel.`
+          });
+        } else {
+          resolve({ valid: true });
+        }
+      };
+      img.onerror = () => resolve({ valid: false, message: 'Không thể đọc tệp hình ảnh.' });
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
         setError('Vui lòng chọn tệp hình ảnh.');
         return;
       }
+      
+      const validation = await validateResolution(file, selectedType.id);
+      if (!validation.valid) {
+        setError(validation.message || 'Ảnh không đạt yêu cầu.');
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        return;
+      }
+
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
       setResultUrl(null);
@@ -59,10 +99,18 @@ export default function App() {
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith('image/')) {
+      const validation = await validateResolution(file, selectedType.id);
+      if (!validation.valid) {
+        setError(validation.message || 'Ảnh không đạt yêu cầu.');
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        return;
+      }
+
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
       setResultUrl(null);
@@ -80,10 +128,12 @@ export default function App() {
     setProgress(5);
 
     try {
-      // Simulate initial progress
-      setProgress(10);
+      const typeWithColor = { 
+        ...selectedType, 
+        bgColor: selectedType.id === 'student-3x4' ? customBgColor : selectedType.bgColor 
+      };
       
-      const result = await photoProcessor.process(selectedFile, selectedType);
+      const result = await photoProcessor.process(selectedFile, typeWithColor, (p) => setProgress(p));
       
       console.log("[App] Xử lý ảnh hoàn tất, cập nhật giao diện.");
       setProgress(100);
@@ -124,36 +174,204 @@ export default function App() {
     setResultUrl(null);
     setError(null);
     setProgress(0);
+    setShowGuide(true);
   };
+
+  const steps = [
+    { id: 1, name: 'Tự chụp ảnh', icon: Camera },
+    { id: 2, name: 'Chọn loại ảnh', icon: Settings },
+    { id: 3, name: 'Tải ảnh lên', icon: Upload },
+    { id: 4, name: 'Tạo ảnh thẻ', icon: Zap },
+    { id: 5, name: 'Tải ảnh xuống', icon: Download },
+  ];
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-blue-100">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-              <Camera className="text-white w-6 h-6" />
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div className="max-w-5xl mx-auto px-4 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-200">
+              <Camera className="text-white w-7 h-7" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">ID Photo <span className="text-blue-600">AI</span></h1>
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-800">ID Photo <span className="text-blue-600">AIBTeM</span></h1>
           </div>
-          <nav className="hidden md:flex gap-6 text-sm font-medium text-slate-500">
-            <a href="#" className="hover:text-blue-600 transition-colors">Hướng dẫn</a>
-            <a href="#" className="hover:text-blue-600 transition-colors">Quy định</a>
-            <a href="#" className="hover:text-blue-600 transition-colors">Về chúng tôi</a>
+          <nav className="hidden md:flex gap-8 text-lg font-bold text-slate-500">
+            <a href="https://hungvdtn.vn/huong-dan-tao-anh-tren-app-tao-anh-the-aibtem/" target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 transition-all flex items-center gap-2">
+              Hướng dẫn
+              <ExternalLink className="w-4 h-4" />
+            </a>
           </nav>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 md:py-12">
-        <div className="grid lg:grid-cols-12 gap-8 items-start">
+      <main className="max-w-5xl mx-auto px-4 py-8 md:py-12 space-y-12">
+        {/* Process Flow Block */}
+        <section className="bg-white p-8 rounded-[40px] shadow-xl shadow-slate-200/50 border border-slate-100">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 relative">
+            {steps.map((step, idx) => (
+              <div key={step.id} className="flex flex-col items-center gap-3 relative z-10 flex-1">
+                <div className={cn(
+                  "w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-lg",
+                  idx === 0 ? "bg-blue-600 text-white shadow-blue-200" : "bg-slate-100 text-slate-400"
+                )}>
+                  <step.icon className="w-7 h-7" />
+                </div>
+                <div className="text-center">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bước {step.id}</p>
+                  <p className="text-sm font-bold text-slate-700">{step.name}</p>
+                </div>
+                {idx < steps.length - 1 && (
+                  <div className="hidden md:block absolute top-7 left-[calc(50%+40px)] w-[calc(100%-80px)] h-px bg-slate-100" />
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="grid lg:grid-cols-12 gap-10 items-start">
           
           {/* Left Column: Controls */}
-          <div className="lg:col-span-5 space-y-6">
-            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <ImageIcon className="w-5 h-5 text-blue-600" />
-                1. Tải ảnh chân dung
+          <div className="lg:col-span-5 space-y-8">
+            {/* Step 1: Self Photo Guide */}
+            <AnimatePresence>
+              {showGuide && (
+                <motion.section 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-white p-8 rounded-[40px] shadow-2xl shadow-blue-100/50 border border-blue-50 relative overflow-hidden group hover:shadow-blue-200/50 transition-all duration-500"
+                >
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110 duration-500" />
+                  
+                  <h2 className="text-xl font-extrabold mb-6 flex items-center gap-3 text-slate-800">
+                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                      <Camera className="w-6 h-6" />
+                    </div>
+                    1. Tự chụp ảnh
+                  </h2>
+                  
+                  <div className="space-y-4 text-sm text-slate-600 relative z-10">
+                    <p className="font-medium text-slate-800">Bạn có thể tự chụp ảnh bằng chân máy (tripod) hoặc nhờ người chụp hộ. Lưu ý:</p>
+                    <ul className="space-y-3">
+                      {[
+                        { t: 'Tư thế', d: 'Đầu thẳng không cúi xuống hay ngửa ra sau, không nghiêng trái, nghiêng phải, lưng thẳng, duỗi thẳng tay, vai thẳng;' },
+                        { t: 'Phông nền', d: 'Lấy bức tường hoặc nơi tương tự làm phông; càng đơn giản, kết quả tách nền càng đẹp.' },
+                        { t: 'Ánh sáng', d: 'Đứng đối diện cửa sổ hoặc nguồn sáng đều, không để đổ bóng trên mặt.' },
+                        { t: 'Vị trí camera', d: 'Mắt nhìn vào camera đặt ngang tầm mắt, cách người 0.6-0.8m, không đứng cách quá xa' },
+                        { t: 'Khung hình', d: 'Lấy từ thắt lưng trở lên' },
+                        { t: 'Chụp ảnh', d: 'Dùng camera sau, không chụp ảnh selfie.' }
+                      ].map((item, i) => (
+                        <li key={i} className="flex gap-3">
+                          <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center shrink-0 mt-0.5 text-blue-600 font-bold text-[10px]">
+                            {i + 1}
+                          </div>
+                          <p><span className="font-bold text-slate-800">{item.t}:</span> {item.d}</p>
+                        </li>
+                      ))}
+                    </ul>
+                    
+                    <div className="pt-4 border-t border-slate-100">
+                      <a 
+                        href="https://hungvdtn.vn/huong-dan-tao-anh-tren-app-tao-anh-the-aibtem/" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-blue-600 font-bold hover:underline flex items-center gap-2 group/link"
+                      >
+                        Xem hướng dẫn tự chụp ảnh thẻ tại đây
+                        <ArrowRight className="w-4 h-4 transition-transform group-hover/link:translate-x-1" />
+                      </a>
+                    </div>
+
+                    <button 
+                      onClick={() => setShowGuide(false)}
+                      className="w-full py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all mt-4"
+                    >
+                      Tôi đã hiểu, tiếp tục
+                    </button>
+                  </div>
+                </motion.section>
+              )}
+            </AnimatePresence>
+
+            {/* Step 2: Select Type */}
+            <section className={cn(
+              "bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 transition-all duration-500 hover:shadow-xl hover:shadow-slate-200/50",
+              showGuide && "opacity-50 pointer-events-none grayscale-[0.5]"
+            )}>
+              <h2 className="text-xl font-extrabold mb-6 flex items-center gap-3 text-slate-800">
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                  <Settings className="w-6 h-6" />
+                </div>
+                2. Chọn loại ảnh thẻ
+              </h2>
+              
+              <div className="space-y-4">
+                {PHOTO_TYPES.map((type) => (
+                  <div key={type.id}>
+                    <button
+                      onClick={() => setSelectedType(type)}
+                      className={cn(
+                        "w-full text-left p-5 rounded-[24px] border-2 transition-all flex items-center justify-between group relative overflow-hidden",
+                        selectedType.id === type.id 
+                          ? "border-blue-600 bg-blue-50/50" 
+                          : "border-slate-100 hover:border-blue-200 hover:bg-slate-50"
+                      )}
+                    >
+                      <div className="relative z-10">
+                        <p className={cn("text-base font-bold", selectedType.id === type.id ? "text-blue-700" : "text-slate-700")}>
+                          {type.name}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">{type.description}</p>
+                      </div>
+                      <div className={cn(
+                        "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
+                        selectedType.id === type.id ? "border-blue-600 bg-blue-600" : "border-slate-200"
+                      )}>
+                        {selectedType.id === type.id && <Check className="w-4 h-4 text-white" />}
+                      </div>
+                    </button>
+                    
+                    {selectedType.id === type.id && type.id === 'student-3x4' && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="mt-3 p-4 bg-white rounded-3xl border-2 border-blue-100 flex items-center gap-4 shadow-sm"
+                      >
+                        <span className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">Màu nền:</span>
+                        <div className="flex gap-3">
+                          <button 
+                            onClick={() => setCustomBgColor('#3a98e3')}
+                            className={cn(
+                              "w-10 h-10 rounded-2xl bg-[#3a98e3] border-4 transition-all shadow-sm",
+                              customBgColor === '#3a98e3' ? "border-blue-600 scale-110" : "border-white"
+                            )}
+                          />
+                          <button 
+                            onClick={() => setCustomBgColor('#ffffff')}
+                            className={cn(
+                              "w-10 h-10 rounded-2xl bg-white border-4 transition-all shadow-sm",
+                              customBgColor === '#ffffff' ? "border-blue-600 scale-110" : "border-slate-100"
+                            )}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Step 3: Upload Portrait */}
+            <section className={cn(
+              "bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 transition-all duration-500 hover:shadow-xl hover:shadow-slate-200/50",
+              (showGuide || !selectedType) && "opacity-50 pointer-events-none grayscale-[0.5]"
+            )}>
+              <h2 className="text-xl font-extrabold mb-6 flex items-center gap-3 text-slate-800">
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                  <FileImage className="w-6 h-6" />
+                </div>
+                3. Tải ảnh chân dung
               </h2>
               
               <div 
@@ -161,7 +379,7 @@ export default function App() {
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
                 className={cn(
-                  "relative border-2 border-dashed rounded-2xl p-8 transition-all cursor-pointer group",
+                  "relative border-2 border-dashed rounded-[32px] p-10 transition-all cursor-pointer group overflow-hidden",
                   selectedFile 
                     ? "border-blue-200 bg-blue-50/30" 
                     : "border-slate-200 hover:border-blue-400 hover:bg-slate-50"
@@ -175,162 +393,110 @@ export default function App() {
                   accept="image/*"
                 />
                 
-                <div className="flex flex-col items-center text-center">
+                <div className="flex flex-col items-center text-center relative z-10">
                   {previewUrl ? (
-                    <div className="relative w-32 h-32 mb-4 rounded-xl overflow-hidden shadow-md ring-4 ring-white">
+                    <div className="relative w-40 h-40 mb-6 rounded-3xl overflow-hidden shadow-2xl ring-8 ring-white">
                       <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                        <RefreshCw className="text-white w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <RefreshCw className="text-white w-8 h-8 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                     </div>
                   ) : (
-                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                      <Upload className="text-slate-400 w-8 h-8" />
+                    <div className="w-20 h-20 bg-slate-100 rounded-[28px] flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-500 group-hover:bg-blue-50">
+                      <Upload className="text-slate-400 w-10 h-10 group-hover:text-blue-600" />
                     </div>
                   )}
-                  <p className="font-medium text-slate-700">
+                  <p className="text-lg font-bold text-slate-700">
                     {selectedFile ? selectedFile.name : "Kéo thả hoặc nhấn để tải ảnh"}
                   </p>
-                  <p className="text-xs text-slate-400 mt-1">Hỗ trợ JPG, PNG (Tối đa 10MB)</p>
+                  <p className="text-sm text-slate-400 mt-2 font-medium">Hỗ trợ JPG, PNG (Tối đa 10MB)</p>
                 </div>
               </div>
+
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-6 p-5 bg-red-50 border-2 border-red-100 rounded-3xl flex items-start gap-4 text-red-700"
+                >
+                  <AlertCircle className="w-6 h-6 shrink-0" />
+                  <p className="text-sm font-bold leading-relaxed">{error}</p>
+                </motion.div>
+              )}
             </section>
 
-            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <ChevronDown className="w-5 h-5 text-blue-600" />
-                2. Chọn loại ảnh thẻ
-              </h2>
-              
-              <div className="space-y-3">
-                {PHOTO_TYPES.map((type) => (
-                  <button
-                    key={type.id}
-                    onClick={() => setSelectedType(type)}
-                    className={cn(
-                      "w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between group",
-                      selectedType.id === type.id 
-                        ? "border-blue-600 bg-blue-50/50 ring-1 ring-blue-600" 
-                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                    )}
-                  >
-                    <div>
-                      <p className={cn("font-semibold", selectedType.id === type.id ? "text-blue-700" : "text-slate-700")}>
-                        {type.name}
-                      </p>
-                      <p className="text-xs text-slate-500">{type.description}</p>
-                    </div>
-                    <div 
-                      className="w-4 h-4 rounded-full border-2 flex items-center justify-center"
-                      style={{ borderColor: selectedType.id === type.id ? '#2563eb' : '#cbd5e1' }}
-                    >
-                      {selectedType.id === type.id && <div className="w-2 h-2 bg-blue-600 rounded-full" />}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
-
+            {/* Step 4: Generate Button */}
             <button
               disabled={!selectedFile || isProcessing}
               onClick={processPhoto}
               className={cn(
-                "w-full py-4 rounded-2xl font-bold text-lg shadow-lg transition-all flex items-center justify-center gap-2",
+                "w-full py-6 rounded-[32px] font-extrabold text-xl shadow-2xl transition-all flex items-center justify-center gap-3",
                 !selectedFile || isProcessing
                   ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                  : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-blue-200"
+                  : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-blue-200 hover:shadow-blue-300"
               )}
             >
               {isProcessing ? (
                 <>
-                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <Loader2 className="w-7 h-7 animate-spin" />
                   Đang xử lý {progress}%...
                 </>
               ) : (
                 <>
-                  <RefreshCw className="w-5 h-5" />
-                  Tạo ảnh thẻ ngay
+                  <Zap className="w-6 h-6 fill-current" />
+                  4. Tạo ảnh thẻ ngay
                 </>
               )}
             </button>
-
-            {error && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3 text-red-700 text-sm"
-              >
-                <AlertCircle className="w-5 h-5 shrink-0" />
-                <p>{error}</p>
-              </motion.div>
-            )}
           </div>
 
           {/* Right Column: Preview */}
           <div className="lg:col-span-7">
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden min-h-[500px] flex flex-col">
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <span className="text-sm font-medium text-slate-500 uppercase tracking-wider">Kết quả xem trước</span>
+            <div className="bg-white rounded-[40px] shadow-sm border border-slate-200 overflow-hidden min-h-[600px] flex flex-col transition-all hover:shadow-2xl hover:shadow-slate-200/50">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" />
+                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-[0.2em]">Kết quả xem trước</span>
+                </div>
                 {resultUrl && (
-                  <span className="flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                    <CheckCircle2 className="w-3 h-3" />
+                  <span className="flex items-center gap-2 text-xs font-extrabold text-green-600 bg-green-50 px-4 py-2 rounded-full border border-green-100">
+                    <CheckCircle2 className="w-4 h-4" />
                     Đã hoàn tất
                   </span>
                 )}
               </div>
               
-              <div className="flex-1 flex items-center justify-center p-8 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px]">
+              <div className="flex-1 flex items-center justify-center p-12 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:30px_30px]">
                 <AnimatePresence mode="wait">
-                  {error ? (
-                    <motion.div 
-                      key="error"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="text-center space-y-4 max-w-sm p-6 bg-red-50 rounded-3xl border border-red-100"
-                    >
-                      <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600">
-                        <AlertCircle className="w-8 h-8" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-red-800">Lỗi xử lý ảnh</p>
-                        <p className="text-sm text-red-600 mt-1">{error}</p>
-                      </div>
-                      <button 
-                        onClick={processPhoto}
-                        className="px-6 py-2 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-all text-sm"
-                      >
-                        Thử lại
-                      </button>
-                    </motion.div>
-                  ) : resultUrl ? (
+                  {resultUrl ? (
                     <motion.div 
                       key="result"
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="flex flex-col items-center gap-6"
+                      className="flex flex-col items-center gap-10"
                     >
                       <div className="relative group">
-                        <div className="absolute -inset-4 bg-blue-100/50 rounded-[40px] blur-2xl group-hover:bg-blue-200/50 transition-all" />
-                        <div className="relative bg-white p-2 rounded-lg shadow-2xl">
+                        <div className="absolute -inset-8 bg-blue-200/30 rounded-[60px] blur-3xl group-hover:bg-blue-300/40 transition-all duration-700" />
+                        <div className="relative bg-white p-4 rounded-3xl shadow-2xl ring-1 ring-slate-100">
                           <img 
                             src={resultUrl} 
                             alt="Result" 
-                            className="max-h-[400px] w-auto rounded shadow-inner"
+                            className="max-h-[450px] w-auto rounded-xl shadow-inner"
                           />
                         </div>
                       </div>
                       
-                      <div className="flex gap-3">
+                      <div className="flex flex-col sm:flex-row gap-4 w-full">
                         <button
                           onClick={downloadResult}
-                          className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+                          className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-slate-900 text-white rounded-[24px] font-extrabold hover:bg-slate-800 transition-all shadow-2xl shadow-slate-300 active:scale-95"
                         >
-                          <Download className="w-5 h-5" />
-                          Tải xuống JPG (300 DPI)
+                          <Download className="w-6 h-6" />
+                          Tải xuống JPG (400 DPI)
                         </button>
                         <button
                           onClick={reset}
-                          className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-semibold hover:bg-slate-50 transition-all"
+                          className="px-8 py-5 bg-white border-2 border-slate-100 text-slate-600 rounded-[24px] font-extrabold hover:bg-slate-50 hover:border-slate-200 transition-all active:scale-95"
                         >
                           Làm lại
                         </button>
@@ -341,17 +507,17 @@ export default function App() {
                       key="loading"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="flex flex-col items-center gap-4"
+                      className="flex flex-col items-center gap-6"
                     >
                       <div className="relative">
-                        <div className="w-24 h-24 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+                        <div className="w-32 h-32 border-[6px] border-blue-50 border-t-blue-600 rounded-full animate-spin" />
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <ImageIcon className="w-8 h-8 text-blue-600/50" />
+                          <ImageIcon className="w-10 h-10 text-blue-600/30" />
                         </div>
                       </div>
-                      <div className="text-center">
-                        <p className="font-bold text-slate-700">AI đang xử lý ảnh của bạn</p>
-                        <p className="text-sm text-slate-400">Tách nền & Căn chỉnh khuôn mặt...</p>
+                      <div className="text-center space-y-2">
+                        <p className="text-xl font-extrabold text-slate-800">AI đang xử lý ảnh của bạn</p>
+                        <p className="text-sm font-medium text-slate-400">Tách nền & Căn chỉnh khuôn mặt theo quy chuẩn...</p>
                       </div>
                     </motion.div>
                   ) : (
@@ -359,84 +525,37 @@ export default function App() {
                       key="empty"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="text-center space-y-4 max-w-xs"
+                      className="text-center space-y-6 max-w-sm"
                     >
-                      <div className="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mx-auto text-slate-300">
-                        <ImageIcon className="w-10 h-10" />
+                      <div className="w-24 h-24 bg-slate-50 rounded-[40px] flex items-center justify-center mx-auto text-slate-200 shadow-inner">
+                        <ImageIcon className="w-12 h-12" />
                       </div>
-                      <div>
-                        <p className="font-semibold text-slate-600">Chưa có ảnh nào được tạo</p>
-                        <p className="text-sm text-slate-400">Tải ảnh lên và nhấn "Tạo ảnh thẻ" để xem kết quả tại đây.</p>
+                      <div className="space-y-2">
+                        <p className="text-lg font-extrabold text-slate-600">Chưa có ảnh nào được tạo</p>
+                        <p className="text-sm font-medium text-slate-400 leading-relaxed">Hoàn thành các bước bên trái để xem kết quả ảnh thẻ chuyên nghiệp tại đây.</p>
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
             </div>
-
-            {/* Tips Section */}
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
-                <p className="text-xs font-bold text-blue-600 uppercase mb-1">Mẹo 1</p>
-                <p className="text-sm text-slate-600">Chụp ảnh nơi có ánh sáng đều, tránh đổ bóng mạnh trên mặt.</p>
-              </div>
-              <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
-                <p className="text-xs font-bold text-blue-600 uppercase mb-1">Mẹo 2</p>
-                <p className="text-sm text-slate-600">Giữ đầu thẳng, mắt nhìn trực diện vào camera.</p>
-              </div>
-              <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
-                <p className="text-xs font-bold text-blue-600 uppercase mb-1">Mẹo 3</p>
-                <p className="text-sm text-slate-600">Phông nền gốc càng đơn giản, kết quả tách nền càng đẹp.</p>
-              </div>
-            </div>
-
-            {/* Notes Section */}
-            <div className="mt-8 p-6 bg-slate-50 rounded-3xl border border-slate-200/50">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <div className="w-1.5 h-4 bg-blue-600 rounded-full" />
-                Lưu Ý Quan Trọng
-              </h3>
-              <ul className="space-y-3">
-                <li className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-[10px] font-bold text-blue-600">1</span>
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    Xem hướng dẫn tự chụp ảnh thẻ tại nhà{' '}
-                    <a href="https://example.com/huong-dan-chup-anh" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-semibold hover:underline">
-                      tại đây
-                    </a>.
-                  </p>
-                </li>
-                <li className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-[10px] font-bold text-blue-600">2</span>
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    Không nên upload ảnh đã qua chỉnh sửa. Nên chụp bằng camera độ phân giải cao khoảng từ 2000x3000 pixel để có kết quả tốt nhất.
-                  </p>
-                </li>
-                <li className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-[10px] font-bold text-blue-600">3</span>
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    Ảnh thẻ cần rõ nét, không bị mờ nhòe, không đeo kính râm hoặc phụ kiện che mặt.
-                  </p>
-                </li>
-              </ul>
-            </div>
           </div>
         </div>
       </main>
 
-      <footer className="max-w-5xl mx-auto px-4 py-12 border-t border-slate-200 mt-12">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          <p className="text-sm text-slate-400">© 2026 ID Photo Maker AI. Bảo mật 100% - Xử lý trực tiếp trên trình duyệt.</p>
-          <div className="flex gap-6 text-sm font-medium text-slate-400">
-            <a href="#" className="hover:text-slate-600">Điều khoản</a>
-            <a href="#" className="hover:text-slate-600">Bảo mật</a>
-            <a href="#" className="hover:text-slate-600">Liên hệ</a>
+      <footer className="mt-12">
+        <div className="w-full h-px bg-blue-600" />
+        <div className="max-w-5xl mx-auto px-4 py-12">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-8">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center">
+                <Camera className="text-white w-5 h-5" />
+              </div>
+              <p className="font-bold text-slate-800">AIBTeM ID Photo</p>
+            </div>
+            <p className="text-sm font-medium text-slate-500 text-center md:text-left leading-relaxed">
+              © 2026 Vũ Xuân Hùng | AIBTeM. Bảo mật 100% - Xử lý ảnh trực tiếp trên trình duyệt, không lưu trữ trên máy chủ.
+            </p>
           </div>
         </div>
       </footer>
