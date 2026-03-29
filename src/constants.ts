@@ -10,6 +10,7 @@ export interface PhotoType {
   eyePosRange?: [number, number]; // Min/Max (Eye to top) / Image height
   headHeightMm?: number; // Head height in mm
   topToHeadMm?: number; // Distance from top of image to top of head in mm
+  horizontalOffsetRatio?: number; // Shift image left (-) or right (+) relative to target width
   dpi: number;
   bgColor: string;
   description: string;
@@ -23,7 +24,7 @@ export const PHOTO_TYPES: PhotoType[] = [
     heightCm: 6,
     headWidthRatio: 0.55, // Larger face
     eyePosRatio: 0.4, // > 1/3, adjusted for tie visibility
-    dpi: 300,
+    dpi: 400,
     bgColor: '#ffffff',
     description: 'Quy chuẩn theo Thủ tục Cấp hộ chiếu phổ thông trên Cổng DVC Bộ Công an',
   },
@@ -34,6 +35,7 @@ export const PHOTO_TYPES: PhotoType[] = [
     heightCm: 4,
     headWidthRatio: 0.38, // Close to 1/3 but slightly larger for better framing
     eyePosRatio: 0.33, // Exactly 1/3
+    horizontalOffsetRatio: -0.015, // Shift slightly left to correct alignment
     dpi: 500,
     bgColor: '#3a98e3',
     description: 'Quy chuẩn theo Thủ tục Cấp đổi GPLX trực tuyến mức độ 4 trên Cổng DVC Cảnh sát giao thông Bộ Công an',

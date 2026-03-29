@@ -174,7 +174,12 @@ export class PhotoProcessor {
       const drawHeight = image.height * scale;
       
       // Improved horizontal centering: center the midpoint between the eyes
-      const dx = targetWidth / 2 - eyeXInImage * scale;
+      let dx = targetWidth / 2 - eyeXInImage * scale;
+      
+      // Apply custom horizontal offset if defined
+      if (type.horizontalOffsetRatio) {
+        dx += type.horizontalOffsetRatio * targetWidth;
+      }
 
       // Apply Enhancement
       ctx.imageSmoothingQuality = 'high';

@@ -33,7 +33,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
-  const [showGuide, setShowGuide] = useState(true);
+  const [currentStep, setCurrentStep] = useState(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,17 +49,17 @@ export default function App() {
         let dpi = 0;
 
         if (typeId === 'passport-4x6') {
-          minW = 354;
-          minH = 471;
-          dpi = 300;
+          minW = 630;
+          minH = 945;
+          dpi = 400;
         } else if (typeId === 'license-3x4') {
-          minW = 473;
+          minW = 591;
+          minH = 787;
+          dpi = 500;
+        } else if (typeId === 'student-3x4') {
+          minW = 472;
           minH = 630;
           dpi = 400;
-        } else if (typeId === 'student-3x4') {
-          minW = 354;
-          minH = 471;
-          dpi = 300;
         }
 
         if (w < minW || h < minH) {
@@ -96,6 +96,7 @@ export default function App() {
       setPreviewUrl(URL.createObjectURL(file));
       setResultUrl(null);
       setError(null);
+      if (currentStep < 4) setCurrentStep(4);
     }
   };
 
@@ -115,6 +116,7 @@ export default function App() {
       setPreviewUrl(URL.createObjectURL(file));
       setResultUrl(null);
       setError(null);
+      if (currentStep < 4) setCurrentStep(4);
     }
   };
 
@@ -138,6 +140,7 @@ export default function App() {
       console.log("[App] Xử lý ảnh hoàn tất, cập nhật giao diện.");
       setProgress(100);
       setResultUrl(result);
+      setCurrentStep(5);
       
       confetti({
         particleCount: 100,
@@ -174,7 +177,7 @@ export default function App() {
     setResultUrl(null);
     setError(null);
     setProgress(0);
-    setShowGuide(true);
+    setCurrentStep(1);
   };
 
   const steps = [
@@ -213,91 +216,92 @@ export default function App() {
               <div key={step.id} className="flex flex-col items-center gap-3 relative z-10 flex-1">
                 <div className={cn(
                   "w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-lg",
-                  idx === 0 ? "bg-blue-600 text-white shadow-blue-200" : "bg-slate-100 text-slate-400"
+                  currentStep === step.id ? "bg-blue-600 text-white shadow-blue-200 scale-110" : "bg-slate-100 text-slate-400"
                 )}>
                   <step.icon className="w-7 h-7" />
                 </div>
                 <div className="text-center">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bước {step.id}</p>
-                  <p className="text-sm font-bold text-slate-700">{step.name}</p>
+                  <p className={cn("text-[10px] font-bold uppercase tracking-widest", currentStep === step.id ? "text-blue-600" : "text-slate-400")}>Bước {step.id}</p>
+                  <p className={cn("text-sm font-bold", currentStep === step.id ? "text-slate-900" : "text-slate-500")}>{step.name}</p>
                 </div>
                 {idx < steps.length - 1 && (
-                  <div className="hidden md:block absolute top-7 left-[calc(50%+40px)] w-[calc(100%-80px)] h-px bg-slate-100" />
+                  <div className={cn(
+                    "hidden md:block absolute top-7 left-[calc(50%+40px)] w-[calc(100%-80px)] h-px transition-colors duration-500",
+                    currentStep > step.id ? "bg-blue-600" : "bg-slate-100"
+                  )} />
                 )}
               </div>
             ))}
           </div>
         </section>
 
-        <div className="grid lg:grid-cols-12 gap-10 items-start">
-          
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
           {/* Left Column: Controls */}
-          <div className="lg:col-span-5 space-y-8">
+          <div className="lg:col-span-5 space-y-12">
             {/* Step 1: Self Photo Guide */}
-            <AnimatePresence>
-              {showGuide && (
-                <motion.section 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-white p-8 rounded-[40px] shadow-2xl shadow-blue-100/50 border border-blue-50 relative overflow-hidden group hover:shadow-blue-200/50 transition-all duration-500"
-                >
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110 duration-500" />
-                  
-                  <h2 className="text-xl font-extrabold mb-6 flex items-center gap-3 text-slate-800">
-                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
-                      <Camera className="w-6 h-6" />
-                    </div>
-                    1. Tự chụp ảnh
-                  </h2>
-                  
-                  <div className="space-y-4 text-sm text-slate-600 relative z-10">
-                    <p className="font-medium text-slate-800">Bạn có thể tự chụp ảnh bằng chân máy (tripod) hoặc nhờ người chụp hộ. Lưu ý:</p>
-                    <ul className="space-y-3">
-                      {[
-                        { t: 'Tư thế', d: 'Đầu thẳng không cúi xuống hay ngửa ra sau, không nghiêng trái, nghiêng phải, lưng thẳng, duỗi thẳng tay, vai thẳng;' },
-                        { t: 'Phông nền', d: 'Lấy bức tường hoặc nơi tương tự làm phông; càng đơn giản, kết quả tách nền càng đẹp.' },
-                        { t: 'Ánh sáng', d: 'Đứng đối diện cửa sổ hoặc nguồn sáng đều, không để đổ bóng trên mặt.' },
-                        { t: 'Vị trí camera', d: 'Mắt nhìn vào camera đặt ngang tầm mắt, cách người 0.6-0.8m, không đứng cách quá xa' },
-                        { t: 'Khung hình', d: 'Lấy từ thắt lưng trở lên' },
-                        { t: 'Chụp ảnh', d: 'Dùng camera sau, không chụp ảnh selfie.' }
-                      ].map((item, i) => (
-                        <li key={i} className="flex gap-3">
-                          <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center shrink-0 mt-0.5 text-blue-600 font-bold text-[10px]">
-                            {i + 1}
-                          </div>
-                          <p><span className="font-bold text-slate-800">{item.t}:</span> {item.d}</p>
-                        </li>
-                      ))}
-                    </ul>
-                    
-                    <div className="pt-4 border-t border-slate-100">
-                      <a 
-                        href="https://hungvdtn.vn/huong-dan-tao-anh-tren-app-tao-anh-the-aibtem/" 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="text-blue-600 font-bold hover:underline flex items-center gap-2 group/link"
-                      >
-                        Xem hướng dẫn tự chụp ảnh thẻ tại đây
-                        <ArrowRight className="w-4 h-4 transition-transform group-hover/link:translate-x-1" />
-                      </a>
-                    </div>
-
-                    <button 
-                      onClick={() => setShowGuide(false)}
-                      className="w-full py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all mt-4"
-                    >
-                      Tôi đã hiểu, tiếp tục
-                    </button>
-                  </div>
-                </motion.section>
+            <section 
+              className={cn(
+                "bg-white p-8 rounded-[40px] shadow-2xl shadow-blue-100/50 border border-blue-50 relative overflow-hidden group hover:shadow-blue-200/50 transition-all duration-500",
+                currentStep !== 1 && "opacity-60 grayscale-[0.3]"
               )}
-            </AnimatePresence>
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110 duration-500" />
+              
+              <h2 className="text-xl font-extrabold mb-6 flex items-center gap-3 text-slate-800">
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                  <Camera className="w-6 h-6" />
+                </div>
+                1. Tự chụp ảnh
+              </h2>
+              
+              <div className="space-y-4 text-sm text-slate-600 relative z-10">
+                <p className="font-medium text-slate-800">Bạn có thể tự chụp ảnh bằng chân máy (tripod) hoặc nhờ người chụp hộ. Lưu ý:</p>
+                <ul className="space-y-3">
+                  {[
+                    { t: 'Tư thế', d: 'Đầu thẳng không cúi xuống hay ngửa ra sau, không nghiêng trái, nghiêng phải, lưng thẳng, duỗi thẳng tay, vai thẳng;' },
+                    { t: 'Phông nền', d: 'Lấy bức tường hoặc nơi tương tự làm phông; càng đơn giản, kết quả tách nền càng đẹp.' },
+                    { t: 'Ánh sáng', d: 'Đứng đối diện cửa sổ hoặc nguồn sáng đều, không để đổ bóng trên mặt.' },
+                    { t: 'Vị trí camera', d: 'Mắt nhìn vào camera đặt ngang tầm mắt, cách người 0.6-0.8m, không đứng cách quá xa' },
+                    { t: 'Khung hình', d: 'Lấy từ thắt lưng trở lên' },
+                    { t: 'Chụp ảnh', d: 'Dùng camera sau, không chụp ảnh selfie.' }
+                  ].map((item, i) => (
+                    <li key={i} className="flex gap-3">
+                      <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center shrink-0 mt-0.5 text-blue-600 font-bold text-[10px]">
+                        {i + 1}
+                      </div>
+                      <p><span className="font-bold text-slate-800">{item.t}:</span> {item.d}</p>
+                    </li>
+                  ))}
+                </ul>
+                
+                <div className="pt-4 border-t border-slate-100">
+                  <a 
+                    href="https://hungvdtn.vn/huong-dan-tao-anh-tren-app-tao-anh-the-aibtem/" 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-blue-600 font-bold hover:underline flex items-center gap-2 group/link"
+                  >
+                    Xem hướng dẫn chi tiết tạo ảnh thẻ ID Photo AIBTeM tại đây
+                    <ArrowRight className="w-4 h-4 transition-transform group-hover/link:translate-x-1" />
+                  </a>
+                </div>
+
+                {currentStep === 1 && (
+                  <button 
+                    onClick={() => setCurrentStep(2)}
+                    className="w-full py-3 bg-[#4ADEDE] text-white rounded-2xl font-bold hover:opacity-90 transition-all mt-4 shadow-lg shadow-[#4ADEDE]/20"
+                  >
+                    Tôi đã hiểu, tiếp tục
+                  </button>
+                )}
+              </div>
+            </section>
 
             {/* Step 2: Select Type */}
             <section className={cn(
               "bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 transition-all duration-500 hover:shadow-xl hover:shadow-slate-200/50",
-              showGuide && "opacity-50 pointer-events-none grayscale-[0.5]"
+              currentStep < 2 && "opacity-50 pointer-events-none grayscale-[0.5]",
+              currentStep === 2 && "ring-2 ring-blue-600 ring-offset-4"
             )}>
               <h2 className="text-xl font-extrabold mb-6 flex items-center gap-3 text-slate-800">
                 <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
@@ -310,7 +314,10 @@ export default function App() {
                 {PHOTO_TYPES.map((type) => (
                   <div key={type.id}>
                     <button
-                      onClick={() => setSelectedType(type)}
+                      onClick={() => {
+                        setSelectedType(type);
+                        if (currentStep < 3) setCurrentStep(3);
+                      }}
                       className={cn(
                         "w-full text-left p-5 rounded-[24px] border-2 transition-all flex items-center justify-between group relative overflow-hidden",
                         selectedType.id === type.id 
@@ -365,7 +372,8 @@ export default function App() {
             {/* Step 3: Upload Portrait */}
             <section className={cn(
               "bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 transition-all duration-500 hover:shadow-xl hover:shadow-slate-200/50",
-              (showGuide || !selectedType) && "opacity-50 pointer-events-none grayscale-[0.5]"
+              currentStep < 3 && "opacity-50 pointer-events-none grayscale-[0.5]",
+              currentStep === 3 && "ring-2 ring-blue-600 ring-offset-4"
             )}>
               <h2 className="text-xl font-extrabold mb-6 flex items-center gap-3 text-slate-800">
                 <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
@@ -433,7 +441,8 @@ export default function App() {
                 "w-full py-6 rounded-[32px] font-extrabold text-xl shadow-2xl transition-all flex items-center justify-center gap-3",
                 !selectedFile || isProcessing
                   ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                  : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-blue-200 hover:shadow-blue-300"
+                  : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-blue-200 hover:shadow-blue-300",
+                currentStep === 4 && "ring-4 ring-blue-200 animate-pulse"
               )}
             >
               {isProcessing ? (
@@ -489,14 +498,14 @@ export default function App() {
                       <div className="flex flex-col sm:flex-row gap-4 w-full">
                         <button
                           onClick={downloadResult}
-                          className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-slate-900 text-white rounded-[24px] font-extrabold hover:bg-slate-800 transition-all shadow-2xl shadow-slate-300 active:scale-95"
+                          className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-[#4ADEDE] text-white rounded-[24px] font-extrabold hover:opacity-90 transition-all shadow-2xl shadow-[#4ADEDE]/20 active:scale-95"
                         >
                           <Download className="w-6 h-6" />
-                          Tải xuống JPG (400 DPI)
+                          Tải xuống JPG ({selectedType.dpi} DPI)
                         </button>
                         <button
                           onClick={reset}
-                          className="px-8 py-5 bg-white border-2 border-slate-100 text-slate-600 rounded-[24px] font-extrabold hover:bg-slate-50 hover:border-slate-200 transition-all active:scale-95"
+                          className="px-8 py-5 bg-white border-2 border-[#1CA7EC] text-[#1CA7EC] rounded-[24px] font-extrabold hover:bg-slate-50 transition-all active:scale-95"
                         >
                           Làm lại
                         </button>
