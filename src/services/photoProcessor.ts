@@ -78,7 +78,7 @@ export class PhotoProcessor {
         },
         output: {
           format: 'image/png',
-          quality: 0.8
+          quality: 1.0 // Maximum quality for subject extraction
         }
       };
       
@@ -94,7 +94,15 @@ export class PhotoProcessor {
       const noBgImage = await this.loadImage(URL.createObjectURL(noBgBlob));
       if (onProgress) onProgress(80);
 
-      // 4. Detect face for alignment
+      // 4. Smart Hair Defringing (Color Decontamination)
+      console.log("[PhotoProcessor] Đang thực hiện gỡ viền tóc thông minh (Defringing)...");
+      const defringedCanvas = await this.defringe(noBgImage);
+      
+      // 4.5 Selective Sharpening & Detail Enhancement
+      console.log("[PhotoProcessor] Đang khôi phục độ sắc nét và chi tiết...");
+      const enhancedCanvas = await this.selectiveEnhance(defringedCanvas);
+      
+      // 5. Detect face for alignment
       console.log("[PhotoProcessor] Đang nhận diện khuôn mặt và căn chỉnh...");
       const results = this.faceLandmarker!.detect(image);
       if (onProgress) onProgress(85);
@@ -182,18 +190,20 @@ export class PhotoProcessor {
       }
 
       // Apply Enhancement
+      ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      // Reverting to a cleaner filter without blur or drop-shadows to restore sharpness.
-      // We will observe the raw background removal result to identify specific fringe areas.
-      ctx.filter = 'contrast(1.02) saturate(1.02)';
-      ctx.drawImage(noBgImage, dx, dy, drawWidth, drawHeight);
+      
+      // Using a subtle sharpening filter to restore crispness
+      // and drawing the enhanced canvas directly to avoid quality loss.
+      ctx.filter = 'contrast(1.01) saturate(1.01) brightness(1.01)';
+      ctx.drawImage(enhancedCanvas, dx, dy, drawWidth, drawHeight);
       ctx.filter = 'none';
 
       // 6. Convert Canvas to Blob URL
       console.log("[PhotoProcessor] Đang chuyển đổi Canvas thành kết quả cuối cùng...");
       
       const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.95);
+        canvas.toBlob((b) => resolve(b), 'image/jpeg', 1.0); // Maximum quality (100%) to preserve all details
       });
 
       if (!blob) {
@@ -214,6 +224,163 @@ export class PhotoProcessor {
       console.error("[PhotoProcessor] Lỗi trong quá trình xử lý:", error);
       throw error;
     }
+  }
+
+  private async defringe(image: HTMLImageElement): Promise<HTMLCanvasElement> {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(image, 0, 0);
+    
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    
+    // Create a copy to read from while writing to the original
+    const originalData = new Uint8ClampedArray(data);
+    
+    // Radius for color decontamination - increased for better coverage
+    const radius = 6;
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        const alpha = originalData[idx + 3];
+        
+        // If it's a semi-transparent pixel (fringe)
+        if (alpha > 0 && alpha < 255) {
+          let sumR = 0, sumG = 0, sumB = 0;
+          let weightSum = 0;
+          let found = false;
+          
+          // Search in a radius for opaque pixels to "bleed" their color
+          // Using a step of 2 for larger radius efficiency
+          for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              
+              if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                const nIdx = (ny * width + nx) * 4;
+                const nAlpha = originalData[nIdx + 3];
+                
+                if (nAlpha >= 245) { // Nearly opaque pixel
+                  // Weight by distance (inverse square for sharper color bleeding)
+                  const distSq = dx * dx + dy * dy || 0.5;
+                  const weight = 1 / distSq;
+                  
+                  sumR += originalData[nIdx] * weight;
+                  sumG += originalData[nIdx + 1] * weight;
+                  sumB += originalData[nIdx + 2] * weight;
+                  weightSum += weight;
+                  found = true;
+                }
+              }
+            }
+          }
+          
+          if (found && weightSum > 0) {
+            data[idx] = sumR / weightSum;
+            data[idx + 1] = sumG / weightSum;
+            data[idx + 2] = sumB / weightSum;
+            
+            // Alpha Gamma Adjustment: 
+            // Tightens the mask to remove the outermost "dirty" pixels
+            // without losing too much detail.
+            const normalizedAlpha = alpha / 255;
+            const tightenedAlpha = Math.pow(normalizedAlpha, 1.25) * 255;
+            data[idx + 3] = tightenedAlpha;
+          }
+        }
+      }
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  /**
+   * Selective Detail Restoration & Clarity Enhancement
+   * Uses a "High-Frequency Separation" technique to recreate surface textures
+   * (skin pores, eyelashes, fabric weave) while strictly protecting smoothed hair edges.
+   */
+  private async selectiveEnhance(canvas: HTMLCanvasElement): Promise<HTMLCanvasElement> {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    const originalData = new Uint8ClampedArray(data);
+
+    // Detail Restoration Kernel (3x3)
+    // Designed to extract micro-textures without creating halos
+    const kernel = [
+      -0.1, -0.1, -0.1,
+      -0.1,  1.8, -0.1,
+      -0.1, -0.1, -0.1
+    ];
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = (y * width + x) * 4;
+        
+        // --- 1. Edge Protection Logic ---
+        // Only enhance fully opaque pixels AND check neighbors to protect hair edges
+        let isSafeToEnhance = true;
+        if (originalData[idx + 3] < 252) { // More strict threshold
+          isSafeToEnhance = false;
+        } else {
+          // Check 5x5 neighborhood for any transparency to ensure we are far from edges
+          for (let ky = -2; ky <= 2; ky++) {
+            for (let kx = -2; kx <= 2; kx++) {
+              const ny = y + ky;
+              const nx = x + kx;
+              if (ny >= 0 && ny < height && nx >= 0 && nx < width) {
+                const nIdx = (ny * width + nx) * 4;
+                if (originalData[nIdx + 3] < 245) {
+                  isSafeToEnhance = false;
+                  break;
+                }
+              }
+            }
+            if (!isSafeToEnhance) break;
+          }
+        }
+
+        if (isSafeToEnhance) {
+          // --- 2. Detail Restoration (Micro-Texture) ---
+          let r = 0, g = 0, b = 0;
+          for (let ky = -1; ky <= 1; ky++) {
+            for (let kx = -1; kx <= 1; kx++) {
+              const nIdx = ((y + ky) * width + (x + kx)) * 4;
+              const weight = kernel[(ky + 1) * 3 + (kx + 1)];
+              r += originalData[nIdx] * weight;
+              g += originalData[nIdx + 1] * weight;
+              b += originalData[nIdx + 2] * weight;
+            }
+          }
+
+          // --- 3. Selective Clarity (Local Contrast) ---
+          // Boosts the clarity of facial features and clothing textures
+          const clarity = 1.05;
+          r = (r - 128) * clarity + 128;
+          g = (g - 128) * clarity + 128;
+          b = (b - 128) * clarity + 128;
+
+          // --- 4. Blend & Clamp ---
+          // We blend the restored detail back with the original to keep it natural
+          const blend = 0.85; // 85% restored detail, 15% original
+          data[idx] = Math.min(255, Math.max(0, r * blend + originalData[idx] * (1 - blend)));
+          data[idx + 1] = Math.min(255, Math.max(0, g * blend + originalData[idx + 1] * (1 - blend)));
+          data[idx + 2] = Math.min(255, Math.max(0, b * blend + originalData[idx + 2] * (1 - blend)));
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
   }
 
   private loadImage(src: string | File): Promise<HTMLImageElement> {

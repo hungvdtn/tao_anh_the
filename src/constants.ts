@@ -35,18 +35,31 @@ export const PHOTO_TYPES: PhotoType[] = [
     heightCm: 4,
     headWidthRatio: 0.38, // Close to 1/3 but slightly larger for better framing
     eyePosRatio: 0.33, // Exactly 1/3
-    horizontalOffsetRatio: -0.015, // Shift slightly left to correct alignment
+    horizontalOffsetRatio: -0.03, // Shift left to correct alignment
     dpi: 500,
     bgColor: '#3a98e3',
     description: 'Quy chuẩn theo Thủ tục Cấp đổi GPLX trực tuyến mức độ 4 trên Cổng DVC Cảnh sát giao thông Bộ Công an',
   },
   {
-    id: 'student-3x4',
-    name: 'Thẻ HSSV/Thẻ khác/Sơ yếu Lý lịch',
+    id: 'card-3x4',
+    name: 'Thẻ/Sơ yếu lý lịch 3 x 4',
     widthCm: 3,
     heightCm: 4,
-    headWidthRatio: 1 / 2,
-    eyePosRatio: 0.38, // > 1/3
+    headWidthRatio: 1 / 3,
+    eyePosRatio: 0.33,
+    horizontalOffsetRatio: -0.03, // Shift left to correct alignment
+    dpi: 400,
+    bgColor: '#3a98e3',
+    description: 'Theo quy chuẩn chung; nền trắng hoặc nền xanh',
+  },
+  {
+    id: 'card-4x6',
+    name: 'Thẻ/Sơ yếu lý lịch 4 x 6',
+    widthCm: 4,
+    heightCm: 6,
+    headWidthRatio: 1 / 3,
+    eyePosRatio: 0.33,
+    horizontalOffsetRatio: -0.03, // Shift left to correct alignment
     dpi: 400,
     bgColor: '#3a98e3',
     description: 'Theo quy chuẩn chung; nền trắng hoặc nền xanh',

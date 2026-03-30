@@ -20,6 +20,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import ReactGA from 'react-ga4';
 import { PHOTO_TYPES, PhotoType } from './constants';
 import { photoProcessor } from './services/photoProcessor';
 import { cn } from './lib/utils';
@@ -48,7 +49,7 @@ export default function App() {
         let minH = 0;
         let dpi = 0;
 
-        if (typeId === 'passport-4x6') {
+        if (typeId === 'passport-4x6' || typeId === 'card-4x6') {
           minW = 630;
           minH = 945;
           dpi = 400;
@@ -56,7 +57,7 @@ export default function App() {
           minW = 591;
           minH = 787;
           dpi = 500;
-        } else if (typeId === 'student-3x4') {
+        } else if (typeId === 'card-3x4') {
           minW = 472;
           minH = 630;
           dpi = 400;
@@ -132,7 +133,7 @@ export default function App() {
     try {
       const typeWithColor = { 
         ...selectedType, 
-        bgColor: selectedType.id === 'student-3x4' ? customBgColor : selectedType.bgColor 
+        bgColor: selectedType.id.startsWith('card-') ? customBgColor : selectedType.bgColor 
       };
       
       const result = await photoProcessor.process(selectedFile, typeWithColor, (p) => setProgress(p));
@@ -163,12 +164,30 @@ export default function App() {
 
   const downloadResult = () => {
     if (!resultUrl) return;
-    const link = document.createElement('a');
-    link.href = resultUrl;
-    link.download = `photo_${selectedType.id}_${Date.now()}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+    try {
+      // Track GA4 event
+      ReactGA.event({
+        category: "ID_Photo_Generator",
+        action: "download_photo_success",
+        label: "Tạo ảnh thẻ thành công"
+      });
+    } catch (gaError) {
+      // Silent fail for GA4 to not block download
+      console.error("GA4 Event Tracking Error:", gaError);
+    }
+
+    try {
+      const link = document.createElement('a');
+      link.href = resultUrl;
+      link.download = `photo_${selectedType.id}_${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (downloadError) {
+      console.error("Download Error:", downloadError);
+      setError("Có lỗi xảy ra khi tải ảnh xuống. Vui lòng thử lại.");
+    }
   };
 
   const reset = () => {
@@ -258,10 +277,9 @@ export default function App() {
                 <p className="font-medium text-slate-800">Bạn có thể tự chụp ảnh bằng chân máy (tripod) hoặc nhờ người chụp hộ. Lưu ý:</p>
                 <ul className="space-y-3">
                   {[
-                    { t: 'Tư thế', d: 'Đầu thẳng không cúi xuống hay ngửa ra sau, không nghiêng trái, nghiêng phải, lưng thẳng, duỗi thẳng tay, vai thẳng;' },
-                    { t: 'Phông nền', d: 'Lấy bức tường hoặc nơi tương tự làm phông; càng đơn giản, kết quả tách nền càng đẹp.' },
-                    { t: 'Ánh sáng', d: 'Đứng đối diện cửa sổ hoặc nguồn sáng đều, không để đổ bóng trên mặt.' },
-                    { t: 'Vị trí camera', d: 'Mắt nhìn vào camera đặt ngang tầm mắt, cách người 0.6-0.8m, không đứng cách quá xa' },
+                    { t: 'Tư thế', d: 'Đầu thẳng không cúi xuống hay ngửa ra sau, không nghiêng; lưng thẳng, vai thẳng, duỗi thẳng tay; mắt nhìn vào camera đặt ngang tầm mắt, cách người 0.6-0.8m' },
+                    { t: 'Phông nền', d: 'Nên đứng trước một bức tường trơn; nền càng đơn giản, tách nền càng đẹp.' },
+                    { t: 'Ánh sáng', d: 'Đứng đối diện nguồn sáng đều, không để đổ bóng trên mặt.' },
                     { t: 'Khung hình', d: 'Lấy từ thắt lưng trở lên' },
                     { t: 'Chụp ảnh', d: 'Dùng camera sau, không chụp ảnh selfie.' }
                   ].map((item, i) => (
@@ -289,7 +307,7 @@ export default function App() {
                 {currentStep === 1 && (
                   <button 
                     onClick={() => setCurrentStep(2)}
-                    className="w-full py-3 bg-[#4ADEDE] text-white rounded-2xl font-bold hover:opacity-90 transition-all mt-4 shadow-lg shadow-[#4ADEDE]/20"
+                    className="w-full py-3 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all mt-4 shadow-lg shadow-blue-200/50"
                   >
                     Tôi đã hiểu, tiếp tục
                   </button>
@@ -339,7 +357,7 @@ export default function App() {
                       </div>
                     </button>
                     
-                    {selectedType.id === type.id && type.id === 'student-3x4' && (
+                    {selectedType.id === type.id && type.id.startsWith('card-') && (
                       <motion.div 
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
@@ -498,7 +516,7 @@ export default function App() {
                       <div className="flex flex-col sm:flex-row gap-4 w-full">
                         <button
                           onClick={downloadResult}
-                          className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-[#4ADEDE] text-white rounded-[24px] font-extrabold hover:opacity-90 transition-all shadow-2xl shadow-[#4ADEDE]/20 active:scale-95"
+                          className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[24px] font-extrabold hover:bg-blue-700 transition-all shadow-2xl shadow-blue-200/50 active:scale-95"
                         >
                           <Download className="w-6 h-6" />
                           Tải xuống JPG ({selectedType.dpi} DPI)
