@@ -44,23 +44,8 @@ export class PhotoProcessor {
 
         if (onProgress) onProgress(15, "AI đang xử lý ảnh của bạn...");
         
-        const dummyCanvas = document.createElement('canvas');
-        dummyCanvas.width = 1;
-        dummyCanvas.height = 1;
-        dummyCanvas.toBlob(async (blob) => {
-          if (blob) {
-            try {
-              await removeBackground(blob, { 
-                model: 'isnet_fp16',
-                progress: (key, current, total) => {
-                  console.log(`[PhotoProcessor] Pre-warming background removal [${key}]: ${Math.round((current / total) * 100)}%`);
-                }
-              });
-            } catch (e) {
-              console.warn("[PhotoProcessor] Lỗi khi kích hoạt sớm tách nền:", e);
-            }
-          }
-        }, 'image/png');
+        // Pre-warming is removed from init to prevent blocking main thread on startup
+        // It will be handled naturally during the first process call
 
       } catch (error) {
         console.error("[PhotoProcessor] Lỗi khi tải mô hình:", error);
@@ -92,10 +77,21 @@ export class PhotoProcessor {
       const config: Config = {
         model: 'isnet_fp16',
         progress: (key, current, total) => {
-          // Map 0-100% of background removal to 25-75% of total progress in 5% steps
-          const rawPercent = (current / total) * 50; 
-          const steppedPercent = Math.floor(rawPercent / 5) * 5;
-          if (onProgress) onProgress(25 + steppedPercent, "AI đang xử lý ảnh của bạn...");
+          // Map 0-100% of background removal to 25-75% of total progress
+          // We use a more granular approach without the 5% step to ensure it "jumps" correctly in the UI
+          const percentOfTask = current / total;
+          let baseProgress = 25;
+          let range = 50;
+          
+          if (key === 'fetch') {
+            range = 10; // Fetching is first 10% of the 50% range
+          } else {
+            baseProgress = 35; // Processing is the remaining 40%
+            range = 40;
+          }
+          
+          const calculatedProgress = Math.round(baseProgress + (percentOfTask * range));
+          if (onProgress) onProgress(calculatedProgress, "AI đang xử lý ảnh của bạn...");
         },
         output: {
           format: 'image/png',

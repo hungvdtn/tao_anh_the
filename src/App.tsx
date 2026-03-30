@@ -40,9 +40,13 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Pre-initialize AI models to reduce first-run delay
-    console.log("[App] Khởi tạo sớm các mô hình AI...");
-    photoProcessor.init().catch(err => console.error("[App] Lỗi khởi tạo sớm:", err));
+    // Pre-initialize AI models to reduce first-run delay, but delay it to keep UI responsive
+    const timer = setTimeout(() => {
+      console.log("[App] Khởi tạo sớm các mô hình AI...");
+      photoProcessor.init().catch(err => console.error("[App] Lỗi khởi tạo sớm:", err));
+    }, 1500); // Wait 1.5s after mount to start heavy work
+    
+    return () => clearTimeout(timer);
   }, []);
 
   const validateResolution = (file: File, typeId: string): Promise<{ valid: boolean; message?: string }> => {
@@ -145,8 +149,12 @@ export default function App() {
       };
       
       const result = await photoProcessor.process(selectedFile, typeWithColor, (p) => {
-        // Ensure progress only moves forward
-        setProgress(prev => Math.max(prev, p));
+        // Ensure progress only moves forward and is visible
+        setProgress(prev => {
+          const next = Math.max(prev, p);
+          console.log(`[App] Tiến trình: ${next}%`);
+          return next;
+        });
       });
       
       console.log("[App] Xử lý ảnh hoàn tất, cập nhật giao diện.");
