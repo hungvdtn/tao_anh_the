@@ -10,26 +10,28 @@ export class PhotoProcessor {
   /**
    * Initialize models using a singleton pattern to prevent multiple loads and save memory.
    */
-  async init() {
-    if (this.faceLandmarker) return;
+  async init(onProgress?: (p: number, status: string) => void) {
+    if (this.faceLandmarker) {
+      if (onProgress) onProgress(15, "AI đang xử lý ảnh của bạn...");
+      return;
+    }
     if (this.isInitializing) return this.initializationPromise!;
 
     this.isInitializing = true;
     this.initializationPromise = (async () => {
       try {
         console.log("[PhotoProcessor] Bắt đầu tải mô hình...");
+        if (onProgress) onProgress(5, "AI đang xử lý ảnh của bạn...");
         
-        console.log("[PhotoProcessor] Đang tải MediaPipe FilesetResolver...");
         const vision = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.33/wasm"
         );
 
-        console.log("[PhotoProcessor] Đang khởi tạo FaceLandmarker...");
-        // Check for WebGL support to decide delegate
+        if (onProgress) onProgress(10, "AI đang xử lý ảnh của bạn...");
+        
         const canvas = document.createElement('canvas');
         const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
         const delegate = gl ? "GPU" : "CPU";
-        console.log(`[PhotoProcessor] Sử dụng delegate: ${delegate}`);
 
         this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -40,7 +42,26 @@ export class PhotoProcessor {
           numFaces: 1,
         });
 
-        console.log("[PhotoProcessor] Tải mô hình thành công.");
+        if (onProgress) onProgress(15, "AI đang xử lý ảnh của bạn...");
+        
+        const dummyCanvas = document.createElement('canvas');
+        dummyCanvas.width = 1;
+        dummyCanvas.height = 1;
+        dummyCanvas.toBlob(async (blob) => {
+          if (blob) {
+            try {
+              await removeBackground(blob, { 
+                model: 'isnet_fp16',
+                progress: (key, current, total) => {
+                  console.log(`[PhotoProcessor] Pre-warming background removal [${key}]: ${Math.round((current / total) * 100)}%`);
+                }
+              });
+            } catch (e) {
+              console.warn("[PhotoProcessor] Lỗi khi kích hoạt sớm tách nền:", e);
+            }
+          }
+        }, 'image/png');
+
       } catch (error) {
         console.error("[PhotoProcessor] Lỗi khi tải mô hình:", error);
         this.isInitializing = false;
@@ -54,84 +75,76 @@ export class PhotoProcessor {
     return this.initializationPromise;
   }
 
-  async process(imageFile: File, type: PhotoType, onProgress?: (p: number) => void): Promise<string> {
+  async process(imageFile: File, type: PhotoType, onProgress?: (p: number, status: string) => void): Promise<string> {
     try {
       console.log("[PhotoProcessor] Bắt đầu xử lý ảnh:", imageFile.name);
-      if (onProgress) onProgress(5);
+      if (onProgress) onProgress(5, "AI đang xử lý ảnh của bạn...");
       
       // 1. Initialize models
-      await this.init();
-      if (onProgress) onProgress(10);
+      await this.init(onProgress);
+      if (onProgress) onProgress(15, "AI đang xử lý ảnh của bạn...");
 
       // 2. Load image
-      console.log("[PhotoProcessor] Đang tải ảnh vào bộ nhớ...");
       const image = await this.loadImage(imageFile);
-      if (onProgress) onProgress(15);
+      if (onProgress) onProgress(20, "AI đang xử lý ảnh của bạn...");
 
-      // 3. Remove background using @imgly/background-removal
-      console.log("[PhotoProcessor] Đang thực hiện tách nền (Background Removal)...");
+      // 3. Remove background
       const config: Config = {
+        model: 'isnet_fp16',
         progress: (key, current, total) => {
-          const percent = Math.round((current / total) * 60); // Use 60% of total progress for this step
-          if (onProgress) onProgress(15 + percent);
-          console.log(`[PhotoProcessor] Tiến trình tách nền [${key}]: ${Math.round((current / total) * 100)}%`);
+          // Map 0-100% of background removal to 25-75% of total progress in 5% steps
+          const rawPercent = (current / total) * 50; 
+          const steppedPercent = Math.floor(rawPercent / 5) * 5;
+          if (onProgress) onProgress(25 + steppedPercent, "AI đang xử lý ảnh của bạn...");
         },
         output: {
           format: 'image/png',
-          quality: 1.0 // Maximum quality for subject extraction
+          quality: 1.0
         }
       };
       
       let noBgBlob: Blob;
       try {
         noBgBlob = await removeBackground(imageFile, config);
-        console.log("[PhotoProcessor] Tách nền thành công.");
+        if (onProgress) onProgress(75, "AI đang xử lý ảnh của bạn...");
       } catch (bgError) {
         console.error("[PhotoProcessor] Lỗi khi tách nền:", bgError);
         throw new Error("Lỗi tách nền: Có thể do ảnh quá lớn hoặc trình duyệt hết bộ nhớ.");
       }
 
       const noBgImage = await this.loadImage(URL.createObjectURL(noBgBlob));
-      if (onProgress) onProgress(80);
+      if (onProgress) onProgress(80, "AI đang xử lý ảnh của bạn...");
 
-      // 4. Smart Hair Defringing (Color Decontamination)
-      console.log("[PhotoProcessor] Đang thực hiện gỡ viền tóc thông minh (Defringing)...");
+      // 4. Smart Hair Defringing
       const defringedCanvas = await this.defringe(noBgImage);
+      if (onProgress) onProgress(85, "AI đang xử lý ảnh của bạn...");
       
-      // 4.5 Selective Sharpening & Detail Enhancement
-      console.log("[PhotoProcessor] Đang khôi phục độ sắc nét và chi tiết...");
+      // 4.5 Selective Sharpening
       const enhancedCanvas = await this.selectiveEnhance(defringedCanvas);
+      if (onProgress) onProgress(90, "AI đang xử lý ảnh của bạn...");
       
-      // 5. Detect face for alignment
-      console.log("[PhotoProcessor] Đang nhận diện khuôn mặt và căn chỉnh...");
+      // 5. Detect face
       const results = this.faceLandmarker!.detect(image);
-      if (onProgress) onProgress(85);
+      if (onProgress) onProgress(95, "AI đang xử lý ảnh của bạn...");
       
       if (!results.faceLandmarks || results.faceLandmarks.length === 0) {
-        console.error("[PhotoProcessor] Không tìm thấy khuôn mặt.");
         throw new Error("Không tìm thấy khuôn mặt trong ảnh. Vui lòng chọn ảnh rõ mặt hơn.");
       }
 
       const landmarks = results.faceLandmarks[0];
-      if (onProgress) onProgress(90);
       
       // Landmarks: 10 (top of forehead/hairline), 152 (bottom of chin)
       const topHead = landmarks[10];
       const bottomChin = landmarks[152];
       const faceHeightInImage = Math.abs(bottomChin.y - topHead.y) * image.height;
       
-      // Eye position (using iris centers for precision)
-      // Left iris: 468, Right iris: 473
       const leftEye = landmarks[468] || landmarks[159];
       const rightEye = landmarks[473] || landmarks[386];
       const eyeYInImage = ((leftEye.y + rightEye.y) / 2) * image.height;
       const eyeXInImage = ((leftEye.x + rightEye.x) / 2) * image.width;
-
-      // Head width (approximate using landmarks 234 and 454)
       const headWidthInImage = Math.abs(landmarks[454].x - landmarks[234].x) * image.width;
 
-      // 5. Calculate crop and draw to final canvas
-      console.log("[PhotoProcessor] Đang vẽ lên Canvas cuối cùng...");
+      // 5. Calculate crop and draw
       const targetWidth = cmToPx(type.widthCm, type.dpi);
       const targetHeight = cmToPx(type.heightCm, type.dpi);
       
@@ -139,32 +152,24 @@ export class PhotoProcessor {
       let dy = 0;
 
       if (type.id === 'passport-4x6' && type.faceRatio) {
-        // Passport: scale by face height ratio
         scale = (targetHeight * (type.faceRatio || 0.7)) / faceHeightInImage;
-        // Eye position: (eyeY - top) / (bottom - eyeY) = eyeRatio
         const eyeRatio = type.eyeRatio || (2 / 3);
         const targetEyeY = targetHeight * (eyeRatio / (1 + eyeRatio));
         dy = targetEyeY - eyeYInImage * scale;
       } else {
-        // License/Student: scale by head width ratio
         scale = (targetWidth * (type.headWidthRatio || 1 / 3)) / headWidthInImage;
-        
         let targetEyeYRatio = 1 / 3;
         if (type.eyePosRange) {
           targetEyeYRatio = (type.eyePosRange[0] + type.eyePosRange[1]) / 2;
         } else if (type.eyePosRatio) {
           targetEyeYRatio = type.eyePosRatio;
         }
-        
         const targetEyeY = targetHeight * targetEyeYRatio;
         dy = targetEyeY - eyeYInImage * scale;
 
-        // Ensure the image covers the bottom of the canvas
-        // If the bottom of the image doesn't reach the bottom of the canvas, we must increase the scale
         if (dy + image.height * scale < targetHeight) {
           const minScaleToFillBottom = (targetHeight - targetEyeY) / (image.height - eyeYInImage);
           scale = minScaleToFillBottom;
-          // Recalculate dy with the new scale
           dy = targetEyeY - eyeYInImage * scale;
         }
       }
@@ -174,36 +179,25 @@ export class PhotoProcessor {
       canvas.height = targetHeight;
       const ctx = canvas.getContext('2d', { alpha: false })!;
 
-      // Fill background
       ctx.fillStyle = type.bgColor;
       ctx.fillRect(0, 0, targetWidth, targetHeight);
 
       const drawWidth = image.width * scale;
       const drawHeight = image.height * scale;
-      
-      // Improved horizontal centering: center the midpoint between the eyes
       let dx = targetWidth / 2 - eyeXInImage * scale;
-      
-      // Apply custom horizontal offset if defined
       if (type.horizontalOffsetRatio) {
         dx += type.horizontalOffsetRatio * targetWidth;
       }
 
-      // Apply Enhancement
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      
-      // Using a subtle sharpening filter to restore crispness
-      // and drawing the enhanced canvas directly to avoid quality loss.
       ctx.filter = 'contrast(1.01) saturate(1.01) brightness(1.01)';
       ctx.drawImage(enhancedCanvas, dx, dy, drawWidth, drawHeight);
       ctx.filter = 'none';
 
-      // 6. Convert Canvas to Blob URL
-      console.log("[PhotoProcessor] Đang chuyển đổi Canvas thành kết quả cuối cùng...");
-      
+      // 6. Convert Canvas to Blob
       const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob((b) => resolve(b), 'image/jpeg', 1.0); // Maximum quality (100%) to preserve all details
+        canvas.toBlob((b) => resolve(b), 'image/jpeg', 1.0);
       });
 
       if (!blob) {
@@ -211,7 +205,7 @@ export class PhotoProcessor {
       }
 
       const resultUrl = URL.createObjectURL(blob);
-      if (onProgress) onProgress(100);
+      if (onProgress) onProgress(100, "AI đang xử lý ảnh của bạn...");
       
       // Memory Cleanup: Revoke object URLs
       if (noBgImage.src.startsWith('blob:')) {

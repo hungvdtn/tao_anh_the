@@ -34,9 +34,16 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [processingStatus, setProcessingStatus] = useState<string>('');
   const [currentStep, setCurrentStep] = useState(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Pre-initialize AI models to reduce first-run delay
+    console.log("[App] Khởi tạo sớm các mô hình AI...");
+    photoProcessor.init().catch(err => console.error("[App] Lỗi khởi tạo sớm:", err));
+  }, []);
 
   const validateResolution = (file: File, typeId: string): Promise<{ valid: boolean; message?: string }> => {
     return new Promise((resolve) => {
@@ -129,6 +136,7 @@ export default function App() {
     setError(null);
     setResultUrl(null);
     setProgress(5);
+    setProcessingStatus('Bạn vui lòng chờ chút xíu nhé ....');
 
     try {
       const typeWithColor = { 
@@ -136,7 +144,10 @@ export default function App() {
         bgColor: selectedType.id.startsWith('card-') ? customBgColor : selectedType.bgColor 
       };
       
-      const result = await photoProcessor.process(selectedFile, typeWithColor, (p) => setProgress(p));
+      const result = await photoProcessor.process(selectedFile, typeWithColor, (p) => {
+        // Ensure progress only moves forward
+        setProgress(prev => Math.max(prev, p));
+      });
       
       console.log("[App] Xử lý ảnh hoàn tất, cập nhật giao diện.");
       setProgress(100);
@@ -196,6 +207,7 @@ export default function App() {
     setResultUrl(null);
     setError(null);
     setProgress(0);
+    setProcessingStatus('');
     setCurrentStep(1);
   };
 
@@ -457,16 +469,18 @@ export default function App() {
               onClick={processPhoto}
               className={cn(
                 "w-full py-6 rounded-[32px] font-extrabold text-xl shadow-2xl transition-all flex items-center justify-center gap-3",
-                !selectedFile || isProcessing
+                !selectedFile
                   ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                  : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-blue-200 hover:shadow-blue-300",
-                currentStep === 4 && "ring-4 ring-blue-200 animate-pulse"
+                  : isProcessing
+                    ? "bg-blue-500 text-white cursor-wait shadow-blue-100 opacity-90"
+                    : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-blue-200 hover:shadow-blue-300",
+                currentStep === 4 && !isProcessing && "ring-4 ring-blue-200 animate-pulse"
               )}
             >
               {isProcessing ? (
                 <>
                   <Loader2 className="w-7 h-7 animate-spin" />
-                  Đang xử lý {progress}%...
+                  AI đang xử lý .... {progress}%
                 </>
               ) : (
                 <>
@@ -543,8 +557,12 @@ export default function App() {
                         </div>
                       </div>
                       <div className="text-center space-y-2">
-                        <p className="text-xl font-extrabold text-slate-800">AI đang xử lý ảnh của bạn</p>
-                        <p className="text-sm font-medium text-slate-400">Tách nền & Căn chỉnh khuôn mặt theo quy chuẩn...</p>
+                        <p className="text-xl font-extrabold text-slate-800">{processingStatus || 'Bạn vui lòng chờ chút xíu nhé ....'}</p>
+                        <p className="text-sm font-medium text-slate-400">
+                          {progress < 20 ? 'Đang tải mô hình AI (chỉ lần đầu)...' : 
+                           progress < 80 ? 'Đang tách nền & Căn chỉnh khuôn mặt...' : 
+                           'Đang hoàn thiện chi tiết ảnh...'}
+                        </p>
                       </div>
                     </motion.div>
                   ) : (
