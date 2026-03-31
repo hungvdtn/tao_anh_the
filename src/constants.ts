@@ -35,7 +35,6 @@ export const PHOTO_TYPES: PhotoType[] = [
     heightCm: 4,
     headWidthRatio: 0.38, // Close to 1/3 but slightly larger for better framing
     eyePosRatio: 0.33, // Exactly 1/3
-    horizontalOffsetRatio: -0.03, // Shift left to correct alignment
     dpi: 500,
     bgColor: '#3a98e3',
     description: 'Quy chuẩn theo Thủ tục Cấp đổi GPLX trực tuyến mức độ 4 trên Cổng DVC Cảnh sát giao thông Bộ Công an',
@@ -47,7 +46,6 @@ export const PHOTO_TYPES: PhotoType[] = [
     heightCm: 4,
     headWidthRatio: 1 / 3,
     eyePosRatio: 0.33,
-    horizontalOffsetRatio: -0.03, // Shift left to correct alignment
     dpi: 400,
     bgColor: '#3a98e3',
     description: 'Theo quy chuẩn chung; nền trắng hoặc nền xanh',
@@ -59,7 +57,6 @@ export const PHOTO_TYPES: PhotoType[] = [
     heightCm: 6,
     headWidthRatio: 1 / 3,
     eyePosRatio: 0.33,
-    horizontalOffsetRatio: -0.03, // Shift left to correct alignment
     dpi: 400,
     bgColor: '#3a98e3',
     description: 'Theo quy chuẩn chung; nền trắng hoặc nền xanh',

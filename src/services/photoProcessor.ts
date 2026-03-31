@@ -163,8 +163,13 @@ export class PhotoProcessor {
       const leftEye = landmarks[468] || landmarks[159];
       const rightEye = landmarks[473] || landmarks[386];
       const eyeYInImage = ((leftEye.y + rightEye.y) / 2) * image.height;
-      const eyeXInImage = ((leftEye.x + rightEye.x) / 2) * image.width;
-      const headWidthInImage = Math.abs(landmarks[454].x - landmarks[234].x) * image.width;
+      
+      // Use face edges for more robust horizontal centering
+      const faceLeft = landmarks[234];
+      const faceRight = landmarks[454];
+      const headCenterXInImage = ((faceLeft.x + faceRight.x) / 2) * image.width;
+      
+      const headWidthInImage = Math.abs(faceRight.x - faceLeft.x) * image.width;
 
       // 5. Calculate crop and draw
       const targetWidth = cmToPx(type.widthCm, type.dpi);
@@ -206,7 +211,7 @@ export class PhotoProcessor {
 
       const drawWidth = image.width * scale;
       const drawHeight = image.height * scale;
-      let dx = targetWidth / 2 - eyeXInImage * scale;
+      let dx = targetWidth / 2 - headCenterXInImage * scale;
       if (type.horizontalOffsetRatio) {
         dx += type.horizontalOffsetRatio * targetWidth;
       }
@@ -334,12 +339,11 @@ export class PhotoProcessor {
     const height = imageData.height;
     const originalData = new Uint8ClampedArray(data);
 
-    // Detail Restoration Kernel (3x3)
-    // Designed to extract micro-textures without creating halos
+    // Detail Restoration Kernel (3x3) - Strengthened for better sharpness
     const kernel = [
-      -0.1, -0.1, -0.1,
-      -0.1,  1.8, -0.1,
-      -0.1, -0.1, -0.1
+      -0.15, -0.15, -0.15,
+      -0.15,  2.2, -0.15,
+      -0.15, -0.15, -0.15
     ];
 
     for (let y = 1; y < height - 1; y++) {
@@ -388,14 +392,14 @@ export class PhotoProcessor {
 
           // --- 3. Selective Clarity (Local Contrast) ---
           // Boosts the clarity of facial features and clothing textures
-          const clarity = 1.05;
+          const clarity = 1.15;
           r = (r - 128) * clarity + 128;
           g = (g - 128) * clarity + 128;
           b = (b - 128) * clarity + 128;
 
           // --- 4. Blend & Clamp ---
           // We blend the restored detail back with the original to keep it natural
-          const blend = 0.85; // 85% restored detail, 15% original
+          const blend = 0.95; // 95% restored detail, 5% original
           data[idx] = Math.min(255, Math.max(0, r * blend + originalData[idx] * (1 - blend)));
           data[idx + 1] = Math.min(255, Math.max(0, g * blend + originalData[idx + 1] * (1 - blend)));
           data[idx + 2] = Math.min(255, Math.max(0, b * blend + originalData[idx + 2] * (1 - blend)));
