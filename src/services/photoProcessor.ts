@@ -261,6 +261,10 @@ export class PhotoProcessor {
     const radius = 6;
     
     for (let y = 0; y < height; y++) {
+      // Yield to main thread every 50 rows to keep UI responsive
+      if (y % 50 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
       for (let x = 0; x < width; x++) {
         const idx = (y * width + x) * 4;
         const alpha = originalData[idx + 3];
@@ -339,6 +343,10 @@ export class PhotoProcessor {
     ];
 
     for (let y = 1; y < height - 1; y++) {
+      // Yield to main thread every 50 rows to keep UI responsive
+      if (y % 50 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
       for (let x = 1; x < width - 1; x++) {
         const idx = (y * width + x) * 4;
         

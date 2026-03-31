@@ -40,11 +40,16 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Pre-initialize AI models to reduce first-run delay, but delay it significantly
-    // to ensure the initial UI and intro are perfectly responsive.
-    const initAI = () => {
-      console.log("[App] Khởi tạo sớm các mô hình AI...");
-      photoProcessor.init().catch(err => console.error("[App] Lỗi khởi tạo sớm:", err));
+    // Pre-initialize AI models to reduce first-run delay.
+    // We use a longer delay and requestIdleCallback to ensure the UI is fully interactive first.
+    const initAI = async () => {
+      try {
+        console.log("[App] Khởi tạo sớm các mô hình AI...");
+        await photoProcessor.init();
+        console.log("[App] Khởi tạo mô hình AI hoàn tất.");
+      } catch (err) {
+        console.error("[App] Lỗi khởi tạo sớm:", err);
+      }
     };
 
     const timer = setTimeout(() => {
@@ -53,7 +58,7 @@ export default function App() {
       } else {
         initAI();
       }
-    }, 3000); // Wait 3s after mount to start heavy work
+    }, 5000); // Increased to 5s to ensure initial interaction is smooth
     
     return () => clearTimeout(timer);
   }, []);
@@ -157,13 +162,14 @@ export default function App() {
         bgColor: selectedType.id.startsWith('card-') ? customBgColor : selectedType.bgColor 
       };
       
-      const result = await photoProcessor.process(selectedFile, typeWithColor, (p) => {
+      const result = await photoProcessor.process(selectedFile, typeWithColor, async (p, status) => {
         // Ensure progress only moves forward and is visible
-        setProgress(prev => {
-          const next = Math.max(prev, p);
-          console.log(`[App] Tiến trình: ${next}%`);
-          return next;
-        });
+        // We use a small delay to allow the UI thread to breathe and update the progress bar/text
+        setProgress(prev => Math.max(prev, p));
+        if (status) setProcessingStatus(status);
+        
+        // Yield to main thread
+        await new Promise(resolve => setTimeout(resolve, 0));
       });
       
       console.log("[App] Xử lý ảnh hoàn tất, cập nhật giao diện.");
@@ -232,14 +238,6 @@ export default function App() {
     setCurrentStep(1);
   };
 
-  const steps = [
-    { id: 1, name: 'Tự chụp ảnh', icon: Camera },
-    { id: 2, name: 'Chọn loại ảnh', icon: Settings },
-    { id: 3, name: 'Tải ảnh lên', icon: Upload },
-    { id: 4, name: 'Tạo ảnh thẻ', icon: Zap },
-    { id: 5, name: 'Tải ảnh xuống', icon: Download },
-  ];
-
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-blue-100">
       {/* Header */}
@@ -260,40 +258,13 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 md:py-12 space-y-12">
-        {/* Process Flow Block */}
-        <section className="bg-white p-8 rounded-[40px] shadow-xl shadow-slate-200/50 border border-slate-100">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4 relative">
-            {steps.map((step, idx) => (
-              <div key={step.id} className="flex flex-col items-center gap-3 relative z-10 flex-1">
-                <div className={cn(
-                  "w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-lg",
-                  currentStep === step.id ? "bg-blue-600 text-white shadow-blue-200 scale-110" : "bg-slate-100 text-slate-400"
-                )}>
-                  <step.icon className="w-7 h-7" />
-                </div>
-                <div className="text-center">
-                  <p className={cn("text-[10px] font-bold uppercase tracking-widest", currentStep === step.id ? "text-blue-600" : "text-slate-400")}>Bước {step.id}</p>
-                  <p className={cn("text-sm font-bold", currentStep === step.id ? "text-slate-900" : "text-slate-500")}>{step.name}</p>
-                </div>
-                {idx < steps.length - 1 && (
-                  <div className={cn(
-                    "hidden md:block absolute top-7 left-[calc(50%+40px)] w-[calc(100%-80px)] h-px transition-colors duration-500",
-                    currentStep > step.id ? "bg-blue-600" : "bg-slate-100"
-                  )} />
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-          {/* Left Column: Controls */}
-          <div className="lg:col-span-5 space-y-12">
-            {/* Step 1: Self Photo Guide */}
+      <main className="max-w-6xl mx-auto px-4 py-8 md:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+          {/* Row 1 Left: Step 1 (Tự chụp ảnh) */}
+          <div className="lg:col-span-5">
             <section 
               className={cn(
-                "bg-white p-8 rounded-[40px] shadow-2xl shadow-blue-100/50 border border-blue-50 relative overflow-hidden group hover:shadow-blue-200/50 transition-all duration-500",
+                "bg-white p-8 rounded-[40px] shadow-2xl shadow-blue-100/50 border border-blue-50 relative overflow-hidden group hover:shadow-blue-200/50 transition-all duration-500 h-full",
                 currentStep !== 1 && "opacity-60 grayscale-[0.3]"
               )}
             >
@@ -340,17 +311,20 @@ export default function App() {
                 {currentStep === 1 && (
                   <button 
                     onClick={() => setCurrentStep(2)}
-                    className="w-full py-3 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all mt-4 shadow-lg shadow-blue-200/50"
+                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all mt-4 shadow-lg shadow-blue-200/50 active:scale-95 flex items-center justify-center gap-2"
                   >
                     Tôi đã hiểu, tiếp tục
+                    <ArrowRight className="w-5 h-5" />
                   </button>
                 )}
               </div>
             </section>
+          </div>
 
-            {/* Step 2: Select Type */}
+          {/* Row 1 Right: Step 2 (Chọn ảnh thẻ) */}
+          <div className="lg:col-span-7">
             <section className={cn(
-              "bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 transition-all duration-500 hover:shadow-xl hover:shadow-slate-200/50",
+              "bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 transition-all duration-500 hover:shadow-xl hover:shadow-slate-200/50 h-full",
               currentStep < 2 && "opacity-50 pointer-events-none grayscale-[0.5]",
               currentStep === 2 && "ring-2 ring-blue-600 ring-offset-4"
             )}>
@@ -361,29 +335,29 @@ export default function App() {
                 2. Chọn loại ảnh thẻ
               </h2>
               
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {PHOTO_TYPES.map((type) => (
-                  <div key={type.id}>
+                  <div key={type.id} className="flex flex-col">
                     <button
                       onClick={() => {
                         setSelectedType(type);
                         if (currentStep < 3) setCurrentStep(3);
                       }}
                       className={cn(
-                        "w-full text-left p-5 rounded-[24px] border-2 transition-all flex items-center justify-between group relative overflow-hidden",
+                        "w-full h-full text-left p-5 rounded-[24px] border-2 transition-all flex items-center justify-between group relative overflow-hidden",
                         selectedType.id === type.id 
                           ? "border-blue-600 bg-blue-50/50" 
                           : "border-slate-100 hover:border-blue-200 hover:bg-slate-50"
                       )}
                     >
-                      <div className="relative z-10">
+                      <div className="relative z-10 pr-4">
                         <p className={cn("text-base font-bold", selectedType.id === type.id ? "text-blue-700" : "text-slate-700")}>
                           {type.name}
                         </p>
                         <p className="text-xs text-slate-500 mt-1 font-medium">{type.description}</p>
                       </div>
                       <div className={cn(
-                        "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
+                        "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0",
                         selectedType.id === type.id ? "border-blue-600 bg-blue-600" : "border-slate-200"
                       )}>
                         {selectedType.id === type.id && <Check className="w-4 h-4 text-white" />}
@@ -419,7 +393,10 @@ export default function App() {
                 ))}
               </div>
             </section>
+          </div>
 
+          {/* Row 2 Left: Step 3 (Tải ảnh chân dung) & 4 (Tạo ảnh thẻ ngay) */}
+          <div className="lg:col-span-5 space-y-8 lg:space-y-12">
             {/* Step 3: Upload Portrait */}
             <section className={cn(
               "bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 transition-all duration-500 hover:shadow-xl hover:shadow-slate-200/50",
@@ -512,9 +489,9 @@ export default function App() {
             </button>
           </div>
 
-          {/* Right Column: Preview */}
-          <div className="lg:col-span-7">
-            <div className="bg-white rounded-[40px] shadow-sm border border-slate-200 overflow-hidden min-h-[600px] flex flex-col transition-all hover:shadow-2xl hover:shadow-slate-200/50">
+          {/* Row 2 Right: Preview (Kết quả xem trước) */}
+          <div className="lg:col-span-7 h-full">
+            <div className="bg-white rounded-[40px] shadow-sm border border-slate-200 overflow-hidden min-h-[600px] h-full flex flex-col transition-all hover:shadow-2xl hover:shadow-slate-200/50">
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" />
