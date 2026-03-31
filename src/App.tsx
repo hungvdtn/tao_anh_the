@@ -281,7 +281,7 @@ export default function App() {
                 <p className="font-medium text-slate-800">Bạn có thể tự chụp ảnh bằng chân máy (tripod) hoặc nhờ người chụp hộ. Lưu ý:</p>
                 <ul className="space-y-3">
                   {[
-                    { t: 'Tư thế', d: 'Đầu thẳng không cúi xuống hay ngửa ra sau, không nghiêng; lưng thẳng, vai thẳng, duỗi thẳng tay; mắt nhìn vào camera đặt ngang tầm mắt, cách người 0.6-0.8m' },
+                    { t: 'Tư thế', d: 'Đầu thẳng; lưng thẳng, vai thẳng, tay duỗi thẳng; mắt nhìn camera đặt ngang tầm mắt, cách người 0.6 - 0.8m' },
                     { t: 'Phông nền', d: 'Nên đứng trước một bức tường trơn; nền càng đơn giản, tách nền càng đẹp.' },
                     { t: 'Ánh sáng', d: 'Đứng đối diện nguồn sáng đều, không để đổ bóng trên mặt.' },
                     { t: 'Khung hình', d: 'Lấy từ thắt lưng trở lên' },
@@ -303,7 +303,7 @@ export default function App() {
                     rel="noopener noreferrer" 
                     className="text-blue-600 font-bold hover:underline flex items-center gap-2 group/link"
                   >
-                    Xem hướng dẫn chi tiết tạo ảnh thẻ ID Photo AIBTeM tại đây
+                    Xem hướng dẫn chi tiết tại đây
                     <ArrowRight className="w-4 h-4 transition-transform group-hover/link:translate-x-1" />
                   </a>
                 </div>
@@ -531,7 +531,7 @@ export default function App() {
                           className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[24px] font-extrabold hover:bg-blue-700 transition-all shadow-2xl shadow-blue-200/50 active:scale-95"
                         >
                           <Download className="w-6 h-6" />
-                          Tải xuống JPG ({selectedType.dpi} DPI)
+                          5. Tải xuống JPG ({selectedType.dpi} DPI)
                         </button>
                         <button
                           onClick={reset}
