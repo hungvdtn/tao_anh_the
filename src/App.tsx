@@ -40,11 +40,20 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Pre-initialize AI models to reduce first-run delay, but delay it to keep UI responsive
-    const timer = setTimeout(() => {
+    // Pre-initialize AI models to reduce first-run delay, but delay it significantly
+    // to ensure the initial UI and intro are perfectly responsive.
+    const initAI = () => {
       console.log("[App] Khởi tạo sớm các mô hình AI...");
       photoProcessor.init().catch(err => console.error("[App] Lỗi khởi tạo sớm:", err));
-    }, 1500); // Wait 1.5s after mount to start heavy work
+    };
+
+    const timer = setTimeout(() => {
+      if ('requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(() => initAI());
+      } else {
+        initAI();
+      }
+    }, 3000); // Wait 3s after mount to start heavy work
     
     return () => clearTimeout(timer);
   }, []);
@@ -162,11 +171,15 @@ export default function App() {
       setResultUrl(result);
       setCurrentStep(5);
       
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
+      try {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      } catch (confettiErr) {
+        console.warn("[App] Lỗi khi chạy hiệu ứng pháo hoa:", confettiErr);
+      }
     } catch (err: any) {
       console.error("[App] Lỗi trong quá trình xử lý:", err);
       const errorMessage = err.message || 'Có lỗi xảy ra trong quá trình xử lý.';

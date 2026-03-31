@@ -31,16 +31,33 @@ export class PhotoProcessor {
         
         const canvas = document.createElement('canvas');
         const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-        const delegate = gl ? "GPU" : "CPU";
+        let delegate: "GPU" | "CPU" = gl ? "GPU" : "CPU";
 
-        this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            delegate: delegate,
-          },
-          runningMode: "IMAGE",
-          numFaces: 1,
-        });
+        console.log(`[PhotoProcessor] Thử nghiệm delegate: ${delegate}`);
+
+        try {
+          this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+              delegate: delegate,
+            },
+            runningMode: "IMAGE",
+            numFaces: 1,
+          });
+        } catch (gpuError) {
+          console.warn("[PhotoProcessor] Lỗi khi khởi tạo GPU, thử lại với CPU:", gpuError);
+          delegate = "CPU";
+          this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+              delegate: "CPU",
+            },
+            runningMode: "IMAGE",
+            numFaces: 1,
+          });
+        }
+
+        console.log(`[PhotoProcessor] Khởi tạo thành công với delegate: ${delegate}`);
 
         if (onProgress) onProgress(15, "AI đang xử lý ảnh của bạn...");
         
@@ -70,10 +87,12 @@ export class PhotoProcessor {
       if (onProgress) onProgress(15, "AI đang xử lý ảnh của bạn...");
 
       // 2. Load image
+      console.log("[PhotoProcessor] Đang tải ảnh...");
       const image = await this.loadImage(imageFile);
       if (onProgress) onProgress(20, "AI đang xử lý ảnh của bạn...");
 
       // 3. Remove background
+      console.log("[PhotoProcessor] Đang tách nền...");
       const config: Config = {
         model: 'isnet_fp16',
         progress: (key, current, total) => {
@@ -101,26 +120,33 @@ export class PhotoProcessor {
       
       let noBgBlob: Blob;
       try {
+        console.log("[PhotoProcessor] Bắt đầu removeBackground...");
         noBgBlob = await removeBackground(imageFile, config);
+        console.log("[PhotoProcessor] Tách nền thành công.");
         if (onProgress) onProgress(75, "AI đang xử lý ảnh của bạn...");
       } catch (bgError) {
         console.error("[PhotoProcessor] Lỗi khi tách nền:", bgError);
         throw new Error("Lỗi tách nền: Có thể do ảnh quá lớn hoặc trình duyệt hết bộ nhớ.");
       }
 
+      console.log("[PhotoProcessor] Đang tải ảnh đã tách nền...");
       const noBgImage = await this.loadImage(URL.createObjectURL(noBgBlob));
       if (onProgress) onProgress(80, "AI đang xử lý ảnh của bạn...");
 
       // 4. Smart Hair Defringing
+      console.log("[PhotoProcessor] Đang gỡ viền tóc...");
       const defringedCanvas = await this.defringe(noBgImage);
       if (onProgress) onProgress(85, "AI đang xử lý ảnh của bạn...");
       
       // 4.5 Selective Sharpening
+      console.log("[PhotoProcessor] Đang làm nét ảnh...");
       const enhancedCanvas = await this.selectiveEnhance(defringedCanvas);
       if (onProgress) onProgress(90, "AI đang xử lý ảnh của bạn...");
       
       // 5. Detect face
+      console.log("[PhotoProcessor] Đang nhận diện khuôn mặt...");
       const results = this.faceLandmarker!.detect(image);
+      console.log("[PhotoProcessor] Kết quả nhận diện:", results);
       if (onProgress) onProgress(95, "AI đang xử lý ảnh của bạn...");
       
       if (!results.faceLandmarks || results.faceLandmarks.length === 0) {
